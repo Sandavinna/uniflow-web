@@ -7,6 +7,21 @@ axios.defaults.baseURL = API_URL
 axios.defaults.timeout = 10000 // 10 seconds timeout
 axios.defaults.headers.common['Content-Type'] = 'application/json'
 
+// Axios interceptor to add token from sessionStorage on each request
+// This allows each tab to have its own session
+axios.interceptors.request.use(
+  (config) => {
+    const token = sessionStorage.getItem('token')
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+    return config
+  },
+  (error) => {
+    return Promise.reject(error)
+  }
+)
+
 const AuthContext = createContext()
 
 export const useAuth = () => {
@@ -20,11 +35,10 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [token, setToken] = useState(localStorage.getItem('token'))
+  const [token, setToken] = useState(sessionStorage.getItem('token'))
 
   useEffect(() => {
     if (token) {
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
       fetchUser()
     } else {
       setLoading(false)
@@ -39,11 +53,10 @@ export const AuthProvider = ({ children }) => {
     } catch (error) {
       // Silently fail if backend is not available or token is invalid
       console.warn('Could not fetch user:', error.message)
-      localStorage.removeItem('token')
-      localStorage.removeItem('user')
+      sessionStorage.removeItem('token')
+      sessionStorage.removeItem('user')
       setToken(null)
       setUser(null)
-      delete axios.defaults.headers.common['Authorization']
     } finally {
       setLoading(false)
     }
@@ -55,9 +68,8 @@ export const AuthProvider = ({ children }) => {
       const { token: newToken, ...userData } = response.data
       setToken(newToken)
       setUser(userData)
-      localStorage.setItem('token', newToken)
-      localStorage.setItem('user', JSON.stringify(userData))
-      axios.defaults.headers.common['Authorization'] = `Bearer ${newToken}`
+      sessionStorage.setItem('token', newToken)
+      sessionStorage.setItem('user', JSON.stringify(userData))
       return { success: true }
     } catch (error) {
       return {
@@ -73,9 +85,8 @@ export const AuthProvider = ({ children }) => {
       const { token: newToken, ...user } = response.data
       setToken(newToken)
       setUser(user)
-      localStorage.setItem('token', newToken)
-      localStorage.setItem('user', JSON.stringify(user))
-      axios.defaults.headers.common['Authorization'] = `Bearer ${newToken}`
+      sessionStorage.setItem('token', newToken)
+      sessionStorage.setItem('user', JSON.stringify(user))
       return { success: true }
     } catch (error) {
       return {
@@ -88,9 +99,8 @@ export const AuthProvider = ({ children }) => {
   const logout = () => {
     setUser(null)
     setToken(null)
-    localStorage.removeItem('token')
-    localStorage.removeItem('user')
-    delete axios.defaults.headers.common['Authorization']
+    sessionStorage.removeItem('token')
+    sessionStorage.removeItem('user')
   }
 
   const value = {

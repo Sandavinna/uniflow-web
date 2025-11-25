@@ -20,6 +20,24 @@ const Register = () => {
   const { register } = useAuth()
   const navigate = useNavigate()
 
+  // Password validation function
+  const validatePassword = (password) => {
+    const minLength = password.length >= 8
+    const hasUpperCase = /[A-Z]/.test(password)
+    const hasLowerCase = /[a-z]/.test(password)
+    const hasNumber = /[0-9]/.test(password)
+    const hasSpecialChar = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)
+
+    return {
+      isValid: minLength && hasUpperCase && hasLowerCase && hasNumber && hasSpecialChar,
+      minLength,
+      hasUpperCase,
+      hasLowerCase,
+      hasNumber,
+      hasSpecialChar,
+    }
+  }
+
   const handleChange = (e) => {
     setFormData({
       ...formData,
@@ -35,8 +53,15 @@ const Register = () => {
       return
     }
 
-    if (formData.password.length < 6) {
-      toast.error('Password must be at least 6 characters')
+    const passwordValidation = validatePassword(formData.password)
+    if (!passwordValidation.isValid) {
+      const errors = []
+      if (!passwordValidation.minLength) errors.push('at least 8 characters')
+      if (!passwordValidation.hasUpperCase) errors.push('one uppercase letter')
+      if (!passwordValidation.hasLowerCase) errors.push('one lowercase letter')
+      if (!passwordValidation.hasNumber) errors.push('one number')
+      if (!passwordValidation.hasSpecialChar) errors.push('one special character')
+      toast.error(`Password must contain: ${errors.join(', ')}`)
       return
     }
 
@@ -222,6 +247,43 @@ const Register = () => {
                 placeholder="Enter password"
               />
             </div>
+            {formData.password && (
+              <div className="mt-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                <p className="text-xs font-semibold text-gray-700 mb-2">Password Requirements:</p>
+                <ul className="space-y-1 text-xs">
+                  <li className={`flex items-center ${validatePassword(formData.password).minLength ? 'text-green-600' : 'text-gray-500'}`}>
+                    <span className={`mr-2 ${validatePassword(formData.password).minLength ? 'text-green-500' : 'text-gray-400'}`}>
+                      {validatePassword(formData.password).minLength ? '✓' : '○'}
+                    </span>
+                    At least 8 characters
+                  </li>
+                  <li className={`flex items-center ${validatePassword(formData.password).hasUpperCase ? 'text-green-600' : 'text-gray-500'}`}>
+                    <span className={`mr-2 ${validatePassword(formData.password).hasUpperCase ? 'text-green-500' : 'text-gray-400'}`}>
+                      {validatePassword(formData.password).hasUpperCase ? '✓' : '○'}
+                    </span>
+                    One uppercase letter (A-Z)
+                  </li>
+                  <li className={`flex items-center ${validatePassword(formData.password).hasLowerCase ? 'text-green-600' : 'text-gray-500'}`}>
+                    <span className={`mr-2 ${validatePassword(formData.password).hasLowerCase ? 'text-green-500' : 'text-gray-400'}`}>
+                      {validatePassword(formData.password).hasLowerCase ? '✓' : '○'}
+                    </span>
+                    One lowercase letter (a-z)
+                  </li>
+                  <li className={`flex items-center ${validatePassword(formData.password).hasNumber ? 'text-green-600' : 'text-gray-500'}`}>
+                    <span className={`mr-2 ${validatePassword(formData.password).hasNumber ? 'text-green-500' : 'text-gray-400'}`}>
+                      {validatePassword(formData.password).hasNumber ? '✓' : '○'}
+                    </span>
+                    One number (0-9)
+                  </li>
+                  <li className={`flex items-center ${validatePassword(formData.password).hasSpecialChar ? 'text-green-600' : 'text-gray-500'}`}>
+                    <span className={`mr-2 ${validatePassword(formData.password).hasSpecialChar ? 'text-green-500' : 'text-gray-400'}`}>
+                      {validatePassword(formData.password).hasSpecialChar ? '✓' : '○'}
+                    </span>
+                    One special character (!@#$%^&*...)
+                  </li>
+                </ul>
+              </div>
+            )}
           </div>
 
           <div>

@@ -4,12 +4,41 @@ const generateToken = require('../utils/generateToken');
 const sendEmail = require('../utils/sendEmail');
 const crypto = require('crypto');
 
+// Password validation function
+const validatePassword = (password) => {
+  const minLength = password.length >= 8;
+  const hasUpperCase = /[A-Z]/.test(password);
+  const hasLowerCase = /[a-z]/.test(password);
+  const hasNumber = /[0-9]/.test(password);
+  const hasSpecialChar = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password);
+
+  if (!minLength || !hasUpperCase || !hasLowerCase || !hasNumber || !hasSpecialChar) {
+    const errors = [];
+    if (!minLength) errors.push('at least 8 characters');
+    if (!hasUpperCase) errors.push('one uppercase letter');
+    if (!hasLowerCase) errors.push('one lowercase letter');
+    if (!hasNumber) errors.push('one number');
+    if (!hasSpecialChar) errors.push('one special character');
+    return {
+      isValid: false,
+      message: `Password must contain: ${errors.join(', ')}`
+    };
+  }
+  return { isValid: true };
+};
+
 // @desc    Register user
 // @route   POST /api/auth/register
 // @access  Public
 exports.register = async (req, res) => {
   try {
     const { name, email, password, role, studentId, department, academicYear, phone } = req.body;
+
+    // Validate password
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.isValid) {
+      return res.status(400).json({ message: passwordValidation.message });
+    }
 
     // Check if user exists
     const userExists = await User.findOne({ email });
@@ -205,9 +234,11 @@ exports.resetPassword = async (req, res) => {
     const { token } = req.params;
     const { password } = req.body;
 
-    if (!password || password.length < 6) {
+    // Validate password
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.isValid) {
       return res.status(400).json({
-        message: 'Password must be at least 6 characters long',
+        message: passwordValidation.message,
       });
     }
 

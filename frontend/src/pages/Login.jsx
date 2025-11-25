@@ -37,7 +37,7 @@ const Login = () => {
         toast.success('Login successful!')
         // Wait a bit for the user state to update
         setTimeout(() => {
-          const user = JSON.parse(localStorage.getItem('user') || '{}')
+          const user = JSON.parse(sessionStorage.getItem('user') || '{}')
           const role = user.role || 'student'
           // Map role to route
           const roleRoute = role === 'medical_staff' ? 'medical_staff' : role === 'canteen_staff' ? 'canteen_staff' : role === 'hostel_admin' ? 'hostel_admin' : role
