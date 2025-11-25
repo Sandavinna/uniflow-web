@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react'
 import axios from 'axios'
 import { useAuth } from '../context/AuthContext'
 import { toast } from 'react-toastify'
-import { FiCalendar, FiUser, FiCheck, FiX, FiMaximize2, FiUsers, FiCheckCircle } from 'react-icons/fi'
+import { FiCalendar, FiUser, FiCheck, FiX, FiMaximize2, FiUsers, FiCheckCircle, FiDownload, FiUpload } from 'react-icons/fi'
 import { QRCodeSVG } from 'qrcode.react'
+import { Html5Qrcode } from 'html5-qrcode'
 
 const Attendance = () => {
   const { user } = useAuth()
@@ -18,6 +19,8 @@ const Attendance = () => {
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [showQRForm, setShowQRForm] = useState(false)
+  const [showUploadModal, setShowUploadModal] = useState(false)
+  const [uploadedFile, setUploadedFile] = useState(null)
   const [formData, setFormData] = useState({
     student: '',
     course: '',
@@ -171,6 +174,79 @@ const Attendance = () => {
     }
   }
 
+  const handleDownloadQR = async (qrCodeId, courseCode) => {
+    try {
+      const response = await axios.get(`/api/attendance/qr/${qrCodeId}/download`, {
+        responseType: 'blob',
+      })
+      
+      // Create blob URL and trigger download
+      const url = window.URL.createObjectURL(new Blob([response.data]))
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `QR-${courseCode}-${qrCodeId}.png`)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+      
+      toast.success('QR code downloaded successfully!')
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to download QR code')
+    }
+  }
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please upload an image file')
+      return
+    }
+
+    setUploadedFile(file)
+    
+    try {
+      // Use html5-qrcode to decode the QR code from the image
+      const html5QrCode = new Html5Qrcode('qr-reader')
+      
+      // Decode from file - scanFile returns the decoded text directly
+      const decodedText = await html5QrCode.scanFile(file, true)
+      
+      // Clean up the scanner instance
+      await html5QrCode.clear()
+      
+      if (decodedText) {
+        // Send the decoded token to the backend
+        const response = await axios.post('/api/attendance/qr/upload-scan', { 
+          token: decodedText 
+        })
+        toast.success(response.data.message || 'Attendance marked successfully!')
+        setShowUploadModal(false)
+        setUploadedFile(null)
+        fetchStudentQRCodes()
+        fetchData()
+      }
+    } catch (error) {
+      // Clean up on error
+      try {
+        const html5QrCode = new Html5Qrcode('qr-reader')
+        await html5QrCode.clear()
+      } catch (clearError) {
+        // Ignore clear errors
+      }
+      
+      if (error.response) {
+        toast.error(error.response.data?.message || 'Failed to process QR code')
+      } else {
+        toast.error('Could not read QR code from image. Please make sure the image contains a valid QR code.')
+      }
+      setUploadedFile(null)
+    }
+  }
+
   const handleViewQRAttendance = async (qrCodeId) => {
     try {
       const response = await axios.get(`/api/attendance/qr/${qrCodeId}`)
@@ -235,7 +311,7 @@ const Attendance = () => {
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
-                Scan QR Code
+                QR Codes
               </button>
             )}
             <button
@@ -266,9 +342,18 @@ const Attendance = () => {
 
       {activeTab === 'qr' && user?.role === 'student' && (
         <div>
-          <div className="mb-6">
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">Active QR Codes</h2>
-            <p className="text-gray-600">Click "Mark Attendance" below the QR code to mark your attendance</p>
+          <div className="mb-6 flex justify-between items-center">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">Active QR Codes</h2>
+              <p className="text-gray-600">Download the QR code and upload it using the "Upload QR Code" button to mark your attendance</p>
+            </div>
+            <button
+              onClick={() => setShowUploadModal(true)}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+            >
+              <FiUpload size={20} />
+              <span>Upload QR Code</span>
+            </button>
           </div>
           {studentQRCodes.length === 0 ? (
             <div className="text-center py-12 bg-white rounded-lg shadow border border-gray-200">
@@ -311,20 +396,32 @@ const Attendance = () => {
                     <p className="text-xs text-gray-500 mb-4">
                       Expires: {new Date(qr.expiresAt).toLocaleTimeString()}
                     </p>
-                    {qr.alreadyScanned ? (
-                      <div className="flex items-center justify-center space-x-2 text-green-600 py-2">
-                        <FiCheckCircle size={20} />
-                        <span className="font-semibold">Attendance Marked</span>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => handleMarkAttendanceFromQR(qr.token)}
-                        className="w-full bg-primary-600 text-white py-3 px-4 rounded-lg hover:bg-primary-700 flex items-center justify-center space-x-2 font-semibold"
-                      >
-                        <FiCheckCircle size={20} />
-                        <span>Mark Attendance</span>
-                      </button>
-                    )}
+                    <div className="space-y-2">
+                      {qr.alreadyScanned ? (
+                        <div className="flex items-center justify-center space-x-2 text-green-600 py-2">
+                          <FiCheckCircle size={20} />
+                          <span className="font-semibold">Attendance Marked</span>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-600 text-center py-2">
+                          Download and upload this QR code to mark attendance
+                        </p>
+                      )}
+                      {new Date(qr.expiresAt) < new Date() ? (
+                        <div className="w-full bg-gray-300 text-gray-600 py-2 px-4 rounded-lg flex items-center justify-center space-x-2 cursor-not-allowed">
+                          <FiDownload size={18} />
+                          <span>Download Expired</span>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => handleDownloadQR(qr._id, qr.course?.courseCode)}
+                          className="w-full bg-gray-600 text-white py-2 px-4 rounded-lg hover:bg-gray-700 flex items-center justify-center space-x-2"
+                        >
+                          <FiDownload size={18} />
+                          <span>Download QR Code</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -444,6 +541,15 @@ const Attendance = () => {
                   <FiUsers />
                   <span>View Attendance ({qr.attendanceRecords?.length || 0})</span>
                 </button>
+                {qr.isActive && new Date(qr.expiresAt) > new Date() && (
+                  <button
+                    onClick={() => handleDownloadQR(qr._id, qr.course?.courseCode)}
+                    className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 flex items-center space-x-2"
+                  >
+                    <FiDownload size={18} />
+                    <span>Download QR</span>
+                  </button>
+                )}
               </div>
               {selectedQR === qr._id && qrAttendance && (
                 <div className="mt-6 pt-6 border-t">
@@ -605,6 +711,48 @@ const Attendance = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showUploadModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <h2 className="text-2xl font-bold mb-4">Upload QR Code</h2>
+            <p className="text-gray-600 mb-4">
+              Upload a QR code image that you downloaded from the system to mark your attendance.
+            </p>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Select QR Code Image
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileUpload}
+                  className="w-full px-4 py-2 border rounded-lg"
+                />
+              </div>
+              {uploadedFile && (
+                <div className="text-sm text-gray-600">
+                  Processing: {uploadedFile.name}
+                </div>
+              )}
+              <div id="qr-reader" className="hidden"></div>
+              <div className="flex space-x-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUploadModal(false)
+                    setUploadedFile(null)
+                  }}
+                  className="flex-1 bg-gray-200 text-gray-800 py-2 rounded-lg hover:bg-gray-300"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

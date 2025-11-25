@@ -2,6 +2,8 @@ import { createContext, useState, useContext, useEffect } from 'react'
 import axios from 'axios'
 
 // Configure axios defaults
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
+axios.defaults.baseURL = API_URL
 axios.defaults.timeout = 10000 // 10 seconds timeout
 axios.defaults.headers.common['Content-Type'] = 'application/json'
 

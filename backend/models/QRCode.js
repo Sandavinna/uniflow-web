@@ -30,6 +30,10 @@ const qrCodeSchema = new mongoose.Schema({
     type: Boolean,
     default: true,
   },
+  imagePath: {
+    type: String,
+    required: false,
+  },
   attendanceRecords: [{
     student: {
       type: mongoose.Schema.Types.ObjectId,

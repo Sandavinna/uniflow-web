@@ -2,6 +2,9 @@ const QRCode = require('../models/QRCode');
 const Attendance = require('../models/Attendance');
 const Course = require('../models/Course');
 const crypto = require('crypto');
+const QRCodeLib = require('qrcode');
+const path = require('path');
+const fs = require('fs');
 
 // @desc    Generate QR code for attendance
 // @route   POST /api/attendance/qr/generate
@@ -35,12 +38,37 @@ exports.generateQR = async (req, res) => {
     // Generate unique token
     const token = crypto.randomBytes(32).toString('hex');
 
+    // Create QR code directory if it doesn't exist
+    const qrCodeDir = path.join(__dirname, '../uploads/qrcodes');
+    if (!fs.existsSync(qrCodeDir)) {
+      fs.mkdirSync(qrCodeDir, { recursive: true });
+    }
+
+    // Generate QR code image
+    const qrCodeFileName = `qr-${Date.now()}-${crypto.randomBytes(8).toString('hex')}.png`;
+    const qrCodePath = path.join(qrCodeDir, qrCodeFileName);
+    const qrCodeImagePath = `/uploads/qrcodes/${qrCodeFileName}`;
+
+    // Generate QR code image file
+    await QRCodeLib.toFile(qrCodePath, token, {
+      errorCorrectionLevel: 'H',
+      type: 'png',
+      quality: 0.92,
+      margin: 1,
+      width: 512,
+      color: {
+        dark: '#000000',
+        light: '#FFFFFF'
+      }
+    });
+
     const qrCode = await QRCode.create({
       course: courseId,
       lecturer: req.user.id,
       date: new Date(),
       token,
       expiresAt,
+      imagePath: qrCodeImagePath,
     });
 
     res.status(201).json({
@@ -48,6 +76,8 @@ exports.generateQR = async (req, res) => {
       token: qrCode.token,
       expiresAt: qrCode.expiresAt,
       course: course.courseCode,
+      imagePath: qrCode.imagePath,
+      downloadUrl: `/api/attendance/qr/${qrCode._id}/download`,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -187,7 +217,13 @@ exports.getQRCodes = async (req, res) => {
       .populate('lecturer', 'name email')
       .sort({ createdAt: -1 });
 
-    res.json(qrCodes);
+    // Add download URL to each QR code
+    const qrCodesWithDownload = qrCodes.map(qr => ({
+      ...qr.toObject(),
+      downloadUrl: `/api/attendance/qr/${qr._id}/download`,
+    }));
+
+    res.json(qrCodesWithDownload);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -258,12 +294,150 @@ exports.getStudentQRCodes = async (req, res) => {
       return {
         ...qr.toObject(),
         alreadyScanned: alreadyScanned || false,
+        downloadUrl: `/api/attendance/qr/${qr._id}/download`,
       };
     });
 
     res.json(qrCodesWithStatus);
   } catch (error) {
     console.error('[QR Student] Error in getStudentQRCodes:', error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Download QR code image
+// @route   GET /api/attendance/qr/:qrCodeId/download
+// @access  Private (Student, Lecturer, Admin)
+exports.downloadQRCode = async (req, res) => {
+  try {
+    const qrCode = await QRCode.findById(req.params.qrCodeId)
+      .populate('course', 'courseCode courseName');
+
+    if (!qrCode) {
+      return res.status(404).json({ message: 'QR code not found' });
+    }
+
+    // Check if QR code is expired
+    if (new Date() > qrCode.expiresAt) {
+      return res.status(400).json({ message: 'QR code has expired. Download link is no longer available.' });
+    }
+
+    // Check if QR code is active
+    if (!qrCode.isActive) {
+      return res.status(400).json({ message: 'QR code is no longer active.' });
+    }
+
+    // For students, check if they are enrolled in the course
+    if (req.user.role === 'student') {
+      const course = await Course.findById(qrCode.course._id);
+      if (!course.enrolledStudents.includes(req.user.id)) {
+        return res.status(403).json({ message: 'You are not enrolled in this course' });
+      }
+    }
+
+    // For lecturers, check if they own the course
+    if (req.user.role === 'lecturer' && qrCode.lecturer.toString() !== req.user.id) {
+      return res.status(403).json({ message: 'Not authorized to download this QR code' });
+    }
+
+    if (!qrCode.imagePath) {
+      return res.status(404).json({ message: 'QR code image not found' });
+    }
+
+    const imagePath = path.join(__dirname, '..', qrCode.imagePath);
+    
+    // Check if file exists
+    if (!fs.existsSync(imagePath)) {
+      return res.status(404).json({ message: 'QR code image file not found' });
+    }
+
+    // Set headers for download
+    const fileName = `QR-${qrCode.course.courseCode}-${qrCode._id}.png`;
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Type', 'image/png');
+    
+    // Send file
+    res.sendFile(path.resolve(imagePath));
+  } catch (error) {
+    console.error('Error downloading QR code:', error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Upload and scan QR code from image
+// @route   POST /api/attendance/qr/upload-scan
+// @access  Private (Student)
+exports.uploadAndScanQR = async (req, res) => {
+  try {
+    const { token } = req.body;
+
+    if (!token) {
+      return res.status(400).json({ message: 'Token is required' });
+    }
+
+    // Use the existing scanQR logic
+    const qrCode = await QRCode.findOne({ token, isActive: true })
+      .populate('course');
+
+    if (!qrCode) {
+      return res.status(404).json({ message: 'Invalid or expired QR code' });
+    }
+
+    // Check if QR code is expired
+    if (new Date() > qrCode.expiresAt) {
+      qrCode.isActive = false;
+      await qrCode.save();
+      return res.status(400).json({ message: 'QR code has expired' });
+    }
+
+    // Check if student is enrolled in the course
+    const course = await Course.findById(qrCode.course._id);
+    if (!course.enrolledStudents.includes(req.user.id)) {
+      return res.status(403).json({ message: 'You are not enrolled in this course' });
+    }
+
+    // Check if already scanned
+    const alreadyScanned = qrCode.attendanceRecords.find(
+      (record) => record.student.toString() === req.user.id
+    );
+
+    if (alreadyScanned) {
+      return res.status(400).json({ message: 'Attendance already marked' });
+    }
+
+    // Add to attendance records
+    qrCode.attendanceRecords.push({
+      student: req.user.id,
+      scannedAt: new Date(),
+    });
+
+    // Create attendance record
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    await Attendance.findOneAndUpdate(
+      {
+        student: req.user.id,
+        course: qrCode.course._id,
+        date: today,
+      },
+      {
+        student: req.user.id,
+        course: qrCode.course._id,
+        date: today,
+        status: 'present',
+        markedBy: qrCode.lecturer,
+      },
+      { upsert: true, new: true }
+    );
+
+    await qrCode.save();
+
+    res.json({
+      message: 'Attendance marked successfully',
+      course: course.courseCode,
+    });
+  } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };

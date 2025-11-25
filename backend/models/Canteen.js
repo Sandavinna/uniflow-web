@@ -24,10 +24,6 @@ const menuItemSchema = new mongoose.Schema({
     type: Boolean,
     default: true,
   },
-  preparationTime: {
-    type: Number, // in minutes
-    default: 15,
-  },
 });
 
 const orderSchema = new mongoose.Schema({
@@ -84,6 +80,8 @@ const MenuItem = mongoose.model('MenuItem', menuItemSchema);
 const Order = mongoose.model('Order', orderSchema);
 
 module.exports = { MenuItem, Order };
+
+
 
 
 
