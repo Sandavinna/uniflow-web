@@ -179,3 +179,7 @@ VITE_API_URL=https://uniflow-backend.onrender.com
 
 *For detailed instructions, see DEPLOYMENT_GUIDE.md*
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> 1de8c248abde07605b154e729a8f2497ba6925e6
