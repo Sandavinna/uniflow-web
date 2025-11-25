@@ -39,7 +39,8 @@ const Profile = () => {
       })
       // Set preview URL if profile image exists
       if (response.data.profileImage) {
-        setPreviewUrl(`http://localhost:5000${response.data.profileImage}`)
+        const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
+        setPreviewUrl(`${API_URL}${response.data.profileImage}`)
       } else {
         setPreviewUrl(null)
       }
