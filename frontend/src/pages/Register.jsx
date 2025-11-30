@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { toast } from 'react-toastify'
@@ -20,6 +20,13 @@ const Register = () => {
   const [loading, setLoading] = useState(false)
   const { register } = useAuth()
   const navigate = useNavigate()
+
+  // Debug: Log when role changes to lecturer
+  useEffect(() => {
+    if (formData.role === 'lecturer') {
+      console.log('Lecturer role selected - course section should be visible')
+    }
+  }, [formData.role])
 
   // Password validation function
   const validatePassword = (password) => {
