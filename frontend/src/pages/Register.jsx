@@ -40,10 +40,21 @@ const Register = () => {
   }
 
   const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    })
+    const { name, value } = e.target
+    
+    // Reset lecturer courses when role changes away from lecturer
+    if (name === 'role' && value !== 'lecturer') {
+      setFormData({
+        ...formData,
+        [name]: value,
+        lecturerCourses: [],
+      })
+    } else {
+      setFormData({
+        ...formData,
+        [name]: value,
+      })
+    }
   }
 
   const handleSubmit = async (e) => {
@@ -244,15 +255,20 @@ const Register = () => {
           )}
 
           {formData.role === 'lecturer' && (
-            <div>
+            <div className="mt-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Courses (Year-wise) <span className="text-red-500">*</span>
               </label>
-              <div className="space-y-4 border border-gray-200 rounded-lg p-4 bg-gray-50">
+              <div className="space-y-4 border-2 border-gray-300 rounded-lg p-4 bg-gray-50">
                 {formData.lecturerCourses.length === 0 ? (
-                  <p className="text-sm text-gray-500 text-center py-2">
-                    No courses added. Click "Add Year" to start.
-                  </p>
+                  <div className="text-center py-4">
+                    <p className="text-sm text-gray-600 mb-3">
+                      No courses added yet. Click "Add Year" below to start adding courses.
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      You must add at least one course to register as a lecturer.
+                    </p>
+                  </div>
                 ) : (
                   formData.lecturerCourses.map((yearData, yearIndex) => (
                     <div key={yearIndex} className="bg-white rounded-lg p-4 border border-gray-300">
@@ -327,10 +343,10 @@ const Register = () => {
                     </div>
                   ))
                 )}
-                <div className="flex gap-2">
+                <div className="flex gap-2 mt-4 pt-4 border-t border-gray-300">
                   <select
                     id="newYearSelect"
-                    className="flex-1 px-3 py-2 border rounded-lg text-sm"
+                    className="flex-1 px-3 py-2 border-2 border-gray-300 rounded-lg text-sm focus:border-primary-500 focus:outline-none"
                     defaultValue=""
                   >
                     <option value="">Select Year to Add</option>
@@ -354,9 +370,11 @@ const Register = () => {
                           ]
                         })
                         select.value = ''
+                      } else {
+                        toast.error('Please select a year first')
                       }
                     }}
-                    className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 flex items-center space-x-1 text-sm"
+                    className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 flex items-center space-x-1 text-sm font-medium shadow-md"
                   >
                     <FiPlus size={16} />
                     <span>Add Year</span>
