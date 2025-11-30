@@ -33,12 +33,10 @@ app.use('/api/medical', require('./routes/medicalRoutes'));
 app.use('/api/users', require('./routes/userRoutes'));
 
 // MongoDB Connection
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/uniflow', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
-.then(() => console.log('MongoDB Connected'))
-.catch(err => console.error('MongoDB connection error:', err));
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log("MongoDB Connected"))
+  .catch((err) => console.error("MongoDB connection error:", err));
+
 
 // Error handling middleware
 app.use((err, req, res, next) => {
