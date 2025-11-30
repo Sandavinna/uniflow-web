@@ -128,7 +128,7 @@ const Register = () => {
         <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-purple-400 rounded-full mix-blend-multiply filter blur-xl opacity-10 animate-pulse-slow" style={{animationDelay: '4s'}}></div>
       </div>
 
-      <div className="max-w-2xl w-full bg-white/95 backdrop-blur-lg rounded-2xl shadow-2xl p-8 md:p-10 relative z-10 animate-slide-in overflow-y-auto max-h-screen">
+      <div className="max-w-2xl w-full bg-white/95 backdrop-blur-lg rounded-2xl shadow-2xl p-8 md:p-10 relative z-10 animate-slide-in overflow-y-auto" style={{maxHeight: '90vh'}}>
         <div className="text-center mb-8">
           <div className="flex justify-center mb-6">
             <div className="p-4 bg-gradient-to-br from-primary-500 to-primary-700 rounded-2xl shadow-lg">
@@ -255,17 +255,23 @@ const Register = () => {
           )}
 
           {formData.role === 'lecturer' && (
-            <div className="mt-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Courses (Year-wise) <span className="text-red-500">*</span>
+            <div className="mt-6 p-5 bg-yellow-100 border-4 border-yellow-500 rounded-lg shadow-xl" style={{display: 'block !important', visibility: 'visible !important'}}>
+              <label className="block text-lg font-bold text-gray-900 mb-3">
+                📚 Courses (Year-wise) <span className="text-red-600 text-xl">* REQUIRED</span>
+                <span className="block text-sm font-bold text-red-700 mt-2 bg-red-100 p-2 rounded">
+                  ⚠️ You must add at least one course to register as a lecturer
+                </span>
               </label>
-              <div className="space-y-4 border-2 border-gray-300 rounded-lg p-4 bg-gray-50">
+              <div className="space-y-4 border-3 border-blue-500 rounded-lg p-5 bg-white shadow-lg">
                 {formData.lecturerCourses.length === 0 ? (
-                  <div className="text-center py-4">
-                    <p className="text-sm text-gray-600 mb-3">
-                      No courses added yet. Click "Add Year" below to start adding courses.
+                  <div className="text-center py-6 bg-blue-50 rounded-lg border-2 border-dashed border-blue-300">
+                    <p className="text-base font-semibold text-gray-700 mb-2">
+                      ⚠️ No courses added yet
                     </p>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-sm text-gray-600 mb-4">
+                      Click the <strong>"Add Year"</strong> button below to start adding courses.
+                    </p>
+                    <p className="text-xs text-red-600 font-medium">
                       You must add at least one course to register as a lecturer.
                     </p>
                   </div>
@@ -374,10 +380,10 @@ const Register = () => {
                         toast.error('Please select a year first')
                       }
                     }}
-                    className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 flex items-center space-x-1 text-sm font-medium shadow-md"
+                    className="bg-primary-600 text-white px-6 py-3 rounded-lg hover:bg-primary-700 flex items-center space-x-2 text-sm font-bold shadow-lg hover:shadow-xl transition-all"
                   >
-                    <FiPlus size={16} />
-                    <span>Add Year</span>
+                    <FiPlus size={18} />
+                    <span>➕ Add Year</span>
                   </button>
                 </div>
               </div>
