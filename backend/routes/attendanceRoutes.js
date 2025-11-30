@@ -6,6 +6,8 @@ const {
   getAttendanceStats,
   updateAttendance,
   deleteAttendance,
+  getAttendancePercentage,
+  getAllAttendancePercentages,
 } = require('../controllers/attendanceController');
 const {
   generateQR,
@@ -15,6 +17,8 @@ const {
   getStudentQRCodes,
   downloadQRCode,
   uploadAndScanQR,
+  downloadAttendancePDF,
+  deleteQRCode,
 } = require('../controllers/qrCodeController');
 const { protect, authorize } = require('../middleware/auth');
 
@@ -22,6 +26,8 @@ const { protect, authorize } = require('../middleware/auth');
 router.post('/', protect, authorize('admin', 'lecturer'), markAttendance);
 router.get('/', protect, getAttendance);
 router.get('/stats', protect, getAttendanceStats);
+router.get('/percentage', protect, getAttendancePercentage);
+router.get('/percentage/all', protect, getAllAttendancePercentages);
 router.put('/:id', protect, authorize('admin', 'lecturer'), updateAttendance);
 router.delete('/:id', protect, authorize('admin'), deleteAttendance);
 
@@ -32,7 +38,9 @@ router.post('/qr/upload-scan', protect, authorize('student'), uploadAndScanQR);
 router.get('/qr/student', protect, authorize('student'), getStudentQRCodes);
 router.get('/qr', protect, authorize('admin', 'lecturer'), getQRCodes);
 router.get('/qr/:qrCodeId/download', protect, downloadQRCode);
+router.get('/qr/:qrCodeId/pdf', protect, authorize('admin', 'lecturer'), downloadAttendancePDF);
 router.get('/qr/:qrCodeId', protect, authorize('admin', 'lecturer'), getQRAttendance);
+router.delete('/qr/:qrCodeId', protect, authorize('admin', 'lecturer'), deleteQRCode);
 
 module.exports = router;
 

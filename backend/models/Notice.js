@@ -28,6 +28,9 @@ const noticeSchema = new mongoose.Schema({
     filename: String,
     url: String,
   }],
+  image: {
+    type: String,
+  },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',

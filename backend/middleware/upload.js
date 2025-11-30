@@ -21,13 +21,32 @@ const storage = multer.diskStorage({
   }
 });
 
-// File filter - only images
+// Allowed image MIME types
+const allowedMimeTypes = [
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+];
+
+// Allowed file extensions
+const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+
+// File filter - only images with strict validation
 const fileFilter = (req, file, cb) => {
-  if (file.mimetype.startsWith('image/')) {
-    cb(null, true);
-  } else {
-    cb(new Error('Only image files are allowed!'), false);
+  // Check MIME type
+  if (!allowedMimeTypes.includes(file.mimetype)) {
+    return cb(new Error('Invalid file type. Only JPEG, PNG, GIF, and WebP images are allowed.'), false);
   }
+
+  // Check file extension
+  const ext = path.extname(file.originalname).toLowerCase();
+  if (!allowedExtensions.includes(ext)) {
+    return cb(new Error('Invalid file extension. Only .jpg, .jpeg, .png, .gif, and .webp files are allowed.'), false);
+  }
+
+  cb(null, true);
 };
 
 const upload = multer({
@@ -39,6 +58,7 @@ const upload = multer({
 });
 
 module.exports = upload;
+
 
 
 

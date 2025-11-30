@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react'
 import axios from 'axios'
 import { useAuth } from '../context/AuthContext'
 import { toast } from 'react-toastify'
-import { FiBell, FiPlus, FiAlertCircle } from 'react-icons/fi'
+import { FiBell, FiPlus, FiAlertCircle, FiTrash2 } from 'react-icons/fi'
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
 
 const Notices = () => {
   const { user } = useAuth()
@@ -16,6 +18,8 @@ const Notices = () => {
     priority: 'medium',
     targetAudience: ['all'],
   })
+  const [imageFile, setImageFile] = useState(null)
+  const [imagePreview, setImagePreview] = useState(null)
 
   useEffect(() => {
     fetchNotices()
@@ -24,7 +28,8 @@ const Notices = () => {
   const fetchNotices = async () => {
     try {
       const response = await axios.get('/api/notices')
-      setNotices(response.data)
+      // Handle paginated response
+      setNotices(response.data.data || response.data || [])
     } catch (error) {
       toast.error('Failed to fetch notices')
     } finally {
@@ -32,12 +37,41 @@ const Notices = () => {
     }
   }
 
+  const handleImageChange = (e) => {
+    const file = e.target.files[0]
+    if (file) {
+      setImageFile(file)
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setImagePreview(reader.result)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
   const handleCreate = async (e) => {
     e.preventDefault()
     try {
-      await axios.post('/api/notices', formData)
+      const formDataToSend = new FormData()
+      formDataToSend.append('title', formData.title)
+      formDataToSend.append('content', formData.content)
+      formDataToSend.append('category', formData.category)
+      formDataToSend.append('priority', formData.priority)
+      formDataToSend.append('targetAudience', JSON.stringify(formData.targetAudience))
+
+      if (imageFile) {
+        formDataToSend.append('image', imageFile)
+      }
+
+      await axios.post('/api/notices', formDataToSend, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      })
       toast.success('Notice created successfully!')
       setShowModal(false)
+      setImageFile(null)
+      setImagePreview(null)
       setFormData({
         title: '',
         content: '',
@@ -48,6 +82,19 @@ const Notices = () => {
       fetchNotices()
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to create notice')
+    }
+  }
+
+  const handleDelete = async (noticeId) => {
+    if (!window.confirm('Are you sure you want to delete this notice?')) {
+      return
+    }
+    try {
+      await axios.delete(`/api/notices/${noticeId}`)
+      toast.success('Notice deleted successfully!')
+      fetchNotices()
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to delete notice')
     }
   }
 
@@ -74,9 +121,20 @@ const Notices = () => {
     <div>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold text-gray-900">Notices</h1>
-        {(user?.role === 'admin' || user?.role === 'lecturer') && (
+        {user?.role !== 'student' && (
           <button
-            onClick={() => setShowModal(true)}
+            onClick={() => {
+              setImageFile(null)
+              setImagePreview(null)
+              setFormData({
+                title: '',
+                content: '',
+                category: 'general',
+                priority: 'medium',
+                targetAudience: ['all'],
+              })
+              setShowModal(true)
+            }}
             className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 flex items-center space-x-2"
           >
             <FiPlus />
@@ -107,11 +165,36 @@ const Notices = () => {
                   </span>
                 </div>
                 <p className="text-sm text-gray-600 mb-2">
-                  Category: {notice.category} • By: {notice.createdBy?.name || 'N/A'} •{' '}
-                  {new Date(notice.createdAt).toLocaleDateString()}
+                  Category: {notice.category} • By: {notice.createdBy?.name || 'N/A'} 
+                  {notice.createdBy?.role && (
+                    <span className="ml-1 px-2 py-0.5 bg-blue-100 text-blue-800 text-xs font-semibold rounded-full">
+                      {notice.createdBy.role.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                    </span>
+                  )} • {new Date(notice.createdAt).toLocaleDateString()}
                 </p>
               </div>
+              {(user?.role === 'admin' || (user?.role !== 'student' && notice.createdBy?._id === user?._id)) && (
+                <button
+                  onClick={() => handleDelete(notice._id)}
+                  className="ml-4 p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                  title="Delete Notice"
+                >
+                  <FiTrash2 size={20} />
+                </button>
+              )}
             </div>
+            {notice.image && (
+              <div className="mb-4">
+                <img
+                  src={`${API_URL}${notice.image}`}
+                  alt={notice.title}
+                  className="w-full max-w-2xl rounded-lg border border-gray-200"
+                  onError={(e) => {
+                    e.target.style.display = 'none'
+                  }}
+                />
+              </div>
+            )}
             <p className="text-gray-700 whitespace-pre-wrap">{notice.content}</p>
           </div>
         ))}
@@ -166,6 +249,26 @@ const Notices = () => {
                 <option value="high">High</option>
                 <option value="urgent">Urgent</option>
               </select>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Notice Image (Optional)
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageChange}
+                  className="w-full px-4 py-2 border rounded-lg"
+                />
+                {imagePreview && (
+                  <div className="mt-2">
+                    <img
+                      src={imagePreview}
+                      alt="Preview"
+                      className="w-full max-w-md h-48 object-cover rounded-lg border border-gray-300"
+                    />
+                  </div>
+                )}
+              </div>
               <div className="flex space-x-4">
                 <button
                   type="button"
@@ -190,6 +293,7 @@ const Notices = () => {
 }
 
 export default Notices
+
 
 
 

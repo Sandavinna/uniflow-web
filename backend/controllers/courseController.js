@@ -23,12 +23,44 @@ exports.getCourses = async (req, res) => {
       }
     }
 
-    // Admins and lecturers see all courses (no filter)
+    // If user is a lecturer, filter courses by lecturer
+    if (req.user.role === 'lecturer') {
+      query.lecturer = req.user.id;
+      console.log(`[Courses] Filtering courses for lecturer ${req.user.id}`);
+    }
+
+    // Pagination
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    // Search functionality
+    if (req.query.search) {
+      query.$or = [
+        { courseCode: { $regex: req.query.search, $options: 'i' } },
+        { courseName: { $regex: req.query.search, $options: 'i' } },
+      ];
+    }
+
+    const total = await Course.countDocuments(query);
     const courses = await Course.find(query)
       .populate('lecturer', 'name email')
-      .populate('enrolledStudents', 'name studentId email');
+      .populate('enrolledStudents', 'name studentId email')
+      .sort({ year: 1, semester: 1, courseCode: 1 })
+      .skip(skip)
+      .limit(limit);
     
-    res.json(courses);
+    res.json({
+      data: courses,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(total / limit),
+        totalItems: total,
+        itemsPerPage: limit,
+        hasNextPage: page < Math.ceil(total / limit),
+        hasPreviousPage: page > 1,
+      },
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -112,7 +144,7 @@ exports.updateCourse = async (req, res) => {
 
 // @desc    Delete course
 // @route   DELETE /api/courses/:id
-// @access  Private (Admin)
+// @access  Private (Admin, Lecturer - own courses only)
 exports.deleteCourse = async (req, res) => {
   try {
     const course = await Course.findById(req.params.id);
@@ -121,8 +153,20 @@ exports.deleteCourse = async (req, res) => {
       return res.status(404).json({ message: 'Course not found' });
     }
 
+    // Admin can delete any course
+    // Lecturer can only delete their own courses
+    if (req.user.role !== 'admin') {
+      if (req.user.role === 'lecturer') {
+        if (course.lecturer.toString() !== req.user.id) {
+          return res.status(403).json({ message: 'You can only delete your own courses' });
+        }
+      } else {
+        return res.status(403).json({ message: 'Not authorized to delete courses' });
+      }
+    }
+
     await course.deleteOne();
-    res.json({ message: 'Course deleted' });
+    res.json({ message: 'Course deleted successfully' });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

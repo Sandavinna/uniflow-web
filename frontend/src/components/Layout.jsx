@@ -12,6 +12,7 @@ import {
   FiLogOut,
   FiMenu,
   FiX,
+  FiUserCheck,
 } from 'react-icons/fi'
 import { useState } from 'react'
 
@@ -29,6 +30,7 @@ const Layout = ({ children }) => {
   const menuItems = {
     admin: [
       { path: '/admin', icon: FiHome, label: 'Dashboard' },
+      { path: '/admin/registration-requests', icon: FiUserCheck, label: 'Registration Requests' },
       { path: '/admin/courses', icon: FiBook, label: 'Courses' },
       { path: '/admin/attendance', icon: FiCalendar, label: 'Attendance' },
       { path: '/admin/notices', icon: FiBell, label: 'Notices' },

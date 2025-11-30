@@ -4,7 +4,7 @@ const courseSchema = new mongoose.Schema({
   courseCode: {
     type: String,
     required: true,
-    unique: true,
+    // Removed unique constraint to allow same course code for different years/semesters/lecturers
   },
   courseName: {
     type: String,
@@ -50,6 +50,10 @@ const courseSchema = new mongoose.Schema({
     default: Date.now,
   },
 });
+
+// Create compound unique index to allow same courseCode for different year/semester/lecturer combinations
+// This replaces the old unique index on courseCode alone
+courseSchema.index({ courseCode: 1, year: 1, semester: 1, lecturer: 1 }, { unique: true });
 
 module.exports = mongoose.model('Course', courseSchema);
 

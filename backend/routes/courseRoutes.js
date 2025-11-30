@@ -15,7 +15,7 @@ router.get('/', protect, getCourses);
 router.get('/:id', protect, getCourse);
 router.post('/', protect, authorize('admin'), createCourse);
 router.put('/:id', protect, authorize('admin'), updateCourse);
-router.delete('/:id', protect, authorize('admin'), deleteCourse);
+router.delete('/:id', protect, authorize('admin', 'lecturer'), deleteCourse);
 router.post('/:id/enroll', protect, authorize('student'), enrollInCourse);
 router.post('/:id/unenroll', protect, authorize('student'), unenrollFromCourse);
 

@@ -15,9 +15,37 @@ exports.getUsers = async (req, res) => {
     if (req.query.department) {
       query.department = req.query.department;
     }
+    if (req.query.search) {
+      query.$or = [
+        { name: { $regex: req.query.search, $options: 'i' } },
+        { email: { $regex: req.query.search, $options: 'i' } },
+        { studentId: { $regex: req.query.search, $options: 'i' } },
+      ];
+    }
 
-    const users = await User.find(query).select('-password').sort({ createdAt: -1 });
-    res.json(users);
+    // Pagination
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    const total = await User.countDocuments(query);
+    const users = await User.find(query)
+      .select('-password')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    res.json({
+      data: users,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(total / limit),
+        totalItems: total,
+        itemsPerPage: limit,
+        hasNextPage: page < Math.ceil(total / limit),
+        hasPreviousPage: page > 1,
+      },
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -131,6 +159,90 @@ exports.deleteUser = async (req, res) => {
 
     await user.deleteOne();
     res.json({ message: 'User deleted' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Get all pending registration requests
+// @route   GET /api/users/registration-requests
+// @access  Private (Admin)
+exports.getRegistrationRequests = async (req, res) => {
+  try {
+    const requests = await User.find({ 
+      registrationStatus: 'pending',
+      role: { $in: ['lecturer', 'medical_staff', 'canteen_staff', 'hostel_admin'] }
+    })
+      .select('-password')
+      .sort({ createdAt: -1 });
+    
+    res.json(requests);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Approve registration request
+// @route   PUT /api/users/registration-requests/:id/approve
+// @access  Private (Admin)
+exports.approveRegistration = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    if (user.registrationStatus !== 'pending') {
+      return res.status(400).json({ message: 'User registration is not pending' });
+    }
+
+    user.registrationStatus = 'approved';
+    await user.save();
+
+    res.json({ 
+      message: 'Registration approved successfully',
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        registrationStatus: user.registrationStatus,
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Reject registration request
+// @route   PUT /api/users/registration-requests/:id/reject
+// @access  Private (Admin)
+exports.rejectRegistration = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    if (user.registrationStatus !== 'pending') {
+      return res.status(400).json({ message: 'User registration is not pending' });
+    }
+
+    user.registrationStatus = 'rejected';
+    await user.save();
+
+    res.json({ 
+      message: 'Registration rejected successfully',
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        registrationStatus: user.registrationStatus,
+      }
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

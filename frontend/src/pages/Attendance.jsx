@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import axios from 'axios'
 import { useAuth } from '../context/AuthContext'
 import { toast } from 'react-toastify'
-import { FiCalendar, FiUser, FiCheck, FiX, FiMaximize2, FiUsers, FiCheckCircle, FiDownload, FiUpload } from 'react-icons/fi'
+import { FiCalendar, FiUser, FiCheck, FiX, FiMaximize2, FiUsers, FiCheckCircle, FiDownload, FiUpload, FiFileText, FiPercent } from 'react-icons/fi'
 import { QRCodeSVG } from 'qrcode.react'
 import { Html5Qrcode } from 'html5-qrcode'
 
@@ -29,15 +29,24 @@ const Attendance = () => {
     remarks: '',
   })
   const [qrFormData, setQRFormData] = useState({
-    courseId: '',
+    year: '',
+    semester: '',
+    courseCode: '',
+    courseName: '',
     duration: 60,
   })
+  const [lecturerCourses, setLecturerCourses] = useState([])
+  const [attendancePercentages, setAttendancePercentages] = useState([])
+  const [selectedCourseForPercentage, setSelectedCourseForPercentage] = useState('')
+  const [coursePercentageDetails, setCoursePercentageDetails] = useState(null)
+  const [loadingPercentage, setLoadingPercentage] = useState(false)
 
   useEffect(() => {
     // Set default tab for students
     if (user?.role === 'student') {
       setActiveTab('qr')
       fetchStudentQRCodes() // Fetch immediately for students
+      fetchAllAttendancePercentages() // Fetch attendance percentages
     }
     fetchData()
     // Poll for new QR codes every 5 seconds if student
@@ -52,11 +61,26 @@ const Attendance = () => {
     }
   }, [user?.role])
 
+  useEffect(() => {
+    // Fetch course percentage details when course is selected
+    if (selectedCourseForPercentage && user?.role === 'student') {
+      fetchCoursePercentageDetails(selectedCourseForPercentage)
+    }
+  }, [selectedCourseForPercentage, user?.role])
+
+  // Reset lecturer courses when role changes
+  useEffect(() => {
+    if (user?.role !== 'lecturer') {
+      setLecturerCourses([])
+    }
+  }, [user?.role])
+
   const fetchData = async () => {
     try {
       setLoading(true)
       const promises = [
-        axios.get('/api/attendance').catch(err => {
+        // Request more records for admin/lecturer to see all attendance records
+        axios.get(`/api/attendance?limit=${user?.role === 'admin' || user?.role === 'lecturer' ? 200 : 10}`).catch(err => {
           console.error('Error fetching attendance:', err)
           return { data: [] }
         }),
@@ -68,24 +92,76 @@ const Attendance = () => {
       
       if (user?.role === 'admin' || user?.role === 'lecturer') {
         promises.push(
-          axios.get('/api/users?role=student').catch(err => {
+          // Fetch all students (increase limit to get all)
+          axios.get('/api/users?role=student&limit=1000').catch(err => {
             console.error('Error fetching students:', err)
-            return { data: [] }
+            return { data: { data: [] } }
           }),
           axios.get('/api/attendance/qr').catch(err => {
             console.error('Error fetching QR codes:', err)
-            return { data: [] }
+            return { data: { data: [] } }
+          })
+        )
+      }
+      
+      // Fetch lecturer courses if lecturer
+      if (user?.role === 'lecturer') {
+        promises.push(
+          axios.get('/api/auth/me').catch(err => {
+            console.error('Error fetching user data:', err)
+            return { data: {} }
           })
         )
       }
       
       const results = await Promise.all(promises)
-      setAttendance(results[0].data)
-      setCourses(results[1].data)
+      // Handle paginated response
+      const attendanceData = results[0].data.data || results[0].data || []
+      setAttendance(attendanceData)
+      // Handle paginated response for courses
+      const coursesData = results[1].data.data || results[1].data || []
+      setCourses(coursesData)
       
       if (user?.role === 'admin' || user?.role === 'lecturer') {
-        setStudents(results[2].data)
-        setQRCodes(results[3].data)
+        // Handle paginated response for students
+        const studentsData = results[2].data.data || results[2].data || []
+        setStudents(studentsData)
+        // Handle paginated response for QR codes
+        const qrCodesData = results[3].data.data || results[3].data || []
+        setQRCodes(qrCodesData)
+      }
+      
+      // Set lecturer courses
+      if (user?.role === 'lecturer') {
+        // Find the user data in results (it's the last item for lecturers)
+        const userDataIndex = promises.length - 1
+        const userData = results[userDataIndex]?.data || results[userDataIndex]
+        
+        if (userData?.lecturerCourses && Array.isArray(userData.lecturerCourses) && userData.lecturerCourses.length > 0) {
+          setLecturerCourses(userData.lecturerCourses)
+        } else {
+          // Fallback: Extract unique years from existing courses
+          const uniqueYears = [...new Set(coursesData.map(course => course.year).filter(Boolean))]
+          if (uniqueYears.length > 0) {
+            // Convert to lecturerCourses format
+            const fallbackCourses = uniqueYears.map(year => ({
+              year,
+              courses: coursesData
+                .filter(c => c.year === year)
+                .map(c => ({ courseCode: c.courseCode, courseName: c.courseName }))
+            }))
+            setLecturerCourses(fallbackCourses)
+          } else {
+            // Last resort: Provide default years so lecturer can still generate QR codes
+            setLecturerCourses([
+              { year: 'Year 1', courses: [] },
+              { year: 'Year 2', courses: [] },
+              { year: 'Year 3', courses: [] },
+              { year: 'Year 4', courses: [] },
+              { year: 'Year 5', courses: [] }
+            ])
+          }
+        }
       }
       // Student QR codes are fetched separately in useEffect
     } catch (error) {
@@ -119,6 +195,34 @@ const Attendance = () => {
     }
   }
 
+  const fetchAllAttendancePercentages = async () => {
+    try {
+      setLoadingPercentage(true)
+      const response = await axios.get('/api/attendance/percentage/all')
+      setAttendancePercentages(response.data || [])
+    } catch (error) {
+      console.error('Error fetching attendance percentages:', error)
+      toast.error('Failed to fetch attendance percentages')
+      setAttendancePercentages([])
+    } finally {
+      setLoadingPercentage(false)
+    }
+  }
+
+  const fetchCoursePercentageDetails = async (courseId) => {
+    try {
+      setLoadingPercentage(true)
+      const response = await axios.get(`/api/attendance/percentage?courseId=${courseId}`)
+      setCoursePercentageDetails(response.data)
+    } catch (error) {
+      console.error('Error fetching course percentage details:', error)
+      toast.error('Failed to fetch course attendance details')
+      setCoursePercentageDetails(null)
+    } finally {
+      setLoadingPercentage(false)
+    }
+  }
+
   const handleMarkAttendance = async (e) => {
     e.preventDefault()
     try {
@@ -145,7 +249,10 @@ const Attendance = () => {
       toast.success('QR code generated successfully! Students can now see it on their attendance page.')
       // Reset form and close modal
       setQRFormData({
-        courseId: '',
+        year: '',
+        semester: '',
+        courseCode: '',
+        courseName: '',
         duration: 60,
       })
       setShowQRForm(false)
@@ -160,6 +267,37 @@ const Attendance = () => {
       }
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to generate QR code')
+    }
+  }
+
+  // Get courses for selected year
+  const getCoursesForYear = (year) => {
+    if (!year || !lecturerCourses) return []
+    const yearData = lecturerCourses.find(y => y.year === year)
+    return yearData ? yearData.courses : []
+  }
+
+  // Handle year change
+  const handleYearChange = (year) => {
+    setQRFormData({
+      ...qrFormData,
+      year,
+      semester: '',
+      courseCode: '',
+      courseName: '',
+    })
+  }
+
+  // Handle course selection
+  const handleCourseSelect = (courseCode) => {
+    const courses = getCoursesForYear(qrFormData.year)
+    const selectedCourse = courses.find(c => c.courseCode === courseCode)
+    if (selectedCourse) {
+      setQRFormData({
+        ...qrFormData,
+        courseCode: selectedCourse.courseCode,
+        courseName: selectedCourse.courseName,
+      })
     }
   }
 
@@ -193,6 +331,28 @@ const Attendance = () => {
       toast.success('QR code downloaded successfully!')
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to download QR code')
+    }
+  }
+
+  const handleDownloadAttendancePDF = async (qrCodeId) => {
+    try {
+      const response = await axios.get(`/api/attendance/qr/${qrCodeId}/pdf`, {
+        responseType: 'blob',
+      })
+      
+      // Create blob URL and trigger download
+      const url = window.URL.createObjectURL(new Blob([response.data]))
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `Attendance-${qrCodeId}.pdf`)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+      
+      toast.success('Attendance sheet downloaded successfully!')
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to download attendance sheet')
     }
   }
 
@@ -303,16 +463,34 @@ const Attendance = () => {
         <div className="border-b border-gray-200">
           <nav className="-mb-px flex space-x-8">
             {user?.role === 'student' && (
-              <button
-                onClick={() => setActiveTab('qr')}
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === 'qr'
-                    ? 'border-primary-500 text-primary-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                QR Codes
-              </button>
+              <>
+                <button
+                  onClick={() => setActiveTab('qr')}
+                  className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                    activeTab === 'qr'
+                      ? 'border-primary-500 text-primary-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  QR Codes
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveTab('percentage')
+                    fetchAllAttendancePercentages()
+                  }}
+                  className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                    activeTab === 'percentage'
+                      ? 'border-primary-500 text-primary-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  <span className="flex items-center space-x-1">
+                    <FiPercent />
+                    <span>Attendance Percentage</span>
+                  </span>
+                </button>
+              </>
             )}
             <button
               onClick={() => setActiveTab('records')}
@@ -480,6 +658,191 @@ const Attendance = () => {
               ))}
             </tbody>
           </table>
+          {attendance.length === 0 && (
+            <div className="text-center py-12 text-gray-500">
+              <FiCalendar className="mx-auto mb-4" size={48} />
+              <p>No attendance records found for today</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'percentage' && user?.role === 'student' && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-lg shadow p-6">
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">Attendance Percentage by Subject</h2>
+            
+            {loadingPercentage ? (
+              <div className="text-center py-8">
+                <p className="text-gray-600">Loading attendance percentages...</p>
+              </div>
+            ) : attendancePercentages.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <FiPercent className="mx-auto mb-4" size={48} />
+                <p>No attendance records found. You may not be enrolled in any courses yet.</p>
+              </div>
+            ) : (
+              <>
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Select Subject to View Details
+                  </label>
+                  <select
+                    value={selectedCourseForPercentage}
+                    onChange={(e) => setSelectedCourseForPercentage(e.target.value)}
+                    className="w-full px-4 py-2 border rounded-lg"
+                  >
+                    <option value="">Select a subject...</option>
+                    {attendancePercentages.map((item) => (
+                      <option key={item.course._id} value={item.course._id}>
+                        {item.course.courseCode} - {item.course.courseName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {selectedCourseForPercentage && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                    {attendancePercentages
+                      .filter((item) => item.course._id === selectedCourseForPercentage)
+                      .map((item) => {
+                        const percentage = item.percentage
+                        const getPercentageColor = (pct) => {
+                          if (pct >= 75) return 'bg-green-500'
+                          if (pct >= 50) return 'bg-yellow-500'
+                          return 'bg-red-500'
+                        }
+                        
+                        return (
+                          <div
+                            key={item.course._id}
+                            className="border-2 border-primary-500 bg-primary-50 rounded-lg p-4"
+                          >
+                            <h3 className="font-bold text-gray-900 mb-2">
+                              {item.course.courseCode}
+                            </h3>
+                            <p className="text-sm text-gray-600 mb-3">
+                              {item.course.courseName}
+                            </p>
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="text-2xl font-bold" style={{ color: getPercentageColor(percentage) }}>
+                                  {percentage}%
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  {item.present + item.late} / {item.totalClasses} classes
+                                </p>
+                              </div>
+                              <div className="w-16 h-16">
+                                <svg className="transform -rotate-90" viewBox="0 0 36 36">
+                                  <circle
+                                    cx="18"
+                                    cy="18"
+                                    r="16"
+                                    fill="none"
+                                    stroke="#e5e7eb"
+                                    strokeWidth="3"
+                                  />
+                                  <circle
+                                    cx="18"
+                                    cy="18"
+                                    r="16"
+                                    fill="none"
+                                    stroke={percentage >= 75 ? '#10b981' : percentage >= 50 ? '#f59e0b' : '#ef4444'}
+                                    strokeWidth="3"
+                                    strokeDasharray={`${percentage}, 100`}
+                                  />
+                                </svg>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                  </div>
+                )}
+
+                {selectedCourseForPercentage && coursePercentageDetails && (
+                  <div className="mt-6 pt-6 border-t">
+                    <h3 className="text-xl font-bold text-gray-900 mb-4">
+                      Detailed Attendance: {coursePercentageDetails.course?.courseCode} - {coursePercentageDetails.course?.courseName}
+                    </h3>
+                    
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+                      <div className="bg-blue-50 rounded-lg p-4 text-center">
+                        <p className="text-2xl font-bold text-blue-600">{coursePercentageDetails.totalClasses}</p>
+                        <p className="text-sm text-gray-600">Total Classes</p>
+                      </div>
+                      <div className="bg-green-50 rounded-lg p-4 text-center">
+                        <p className="text-2xl font-bold text-green-600">{coursePercentageDetails.present}</p>
+                        <p className="text-sm text-gray-600">Present</p>
+                      </div>
+                      <div className="bg-red-50 rounded-lg p-4 text-center">
+                        <p className="text-2xl font-bold text-red-600">{coursePercentageDetails.absent}</p>
+                        <p className="text-sm text-gray-600">Absent</p>
+                      </div>
+                      <div className="bg-yellow-50 rounded-lg p-4 text-center">
+                        <p className="text-2xl font-bold text-yellow-600">{coursePercentageDetails.late}</p>
+                        <p className="text-sm text-gray-600">Late</p>
+                      </div>
+                      <div className="bg-purple-50 rounded-lg p-4 text-center">
+                        <p className="text-2xl font-bold text-purple-600">{coursePercentageDetails.excused}</p>
+                        <p className="text-sm text-gray-600">Excused</p>
+                      </div>
+                    </div>
+
+                    <div className="mb-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium text-gray-700">Attendance Percentage</span>
+                        <span className="text-lg font-bold" style={{ 
+                          color: coursePercentageDetails.percentage >= 75 ? '#10b981' : 
+                                 coursePercentageDetails.percentage >= 50 ? '#f59e0b' : '#ef4444' 
+                        }}>
+                          {coursePercentageDetails.percentage}%
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-4">
+                        <div
+                          className={`h-4 rounded-full ${
+                            coursePercentageDetails.percentage >= 75 ? 'bg-green-500' :
+                            coursePercentageDetails.percentage >= 50 ? 'bg-yellow-500' : 'bg-red-500'
+                          }`}
+                          style={{ width: `${Math.min(coursePercentageDetails.percentage, 100)}%` }}
+                        ></div>
+                      </div>
+                    </div>
+
+                    <div className="mt-6">
+                      <h4 className="font-bold text-gray-900 mb-3">Attendance History</h4>
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-gray-200">
+                            {coursePercentageDetails.records.map((record) => (
+                              <tr key={record._id}>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                                  {new Date(record.date).toLocaleDateString()}
+                                </td>
+                                <td className="px-4 py-3 whitespace-nowrap">
+                                  <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(record.status)}`}>
+                                    {record.status}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </div>
       )}
 
@@ -533,7 +896,7 @@ const Attendance = () => {
                   </div>
                 )}
               </div>
-              <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-4 flex-wrap">
                 <button
                   onClick={() => handleViewQRAttendance(qr._id)}
                   className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 flex items-center space-x-2"
@@ -548,6 +911,16 @@ const Attendance = () => {
                   >
                     <FiDownload size={18} />
                     <span>Download QR</span>
+                  </button>
+                )}
+                {/* Show download PDF button after QR expires or always available */}
+                {(!qr.isActive || new Date(qr.expiresAt) <= new Date()) && (
+                  <button
+                    onClick={() => handleDownloadAttendancePDF(qr._id)}
+                    className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center space-x-2"
+                  >
+                    <FiFileText size={18} />
+                    <span>Download Attendance PDF</span>
                   </button>
                 )}
               </div>
@@ -592,21 +965,10 @@ const Attendance = () => {
             <h2 className="text-2xl font-bold mb-4">Mark Attendance</h2>
             <form onSubmit={handleMarkAttendance} className="space-y-4">
               <select
-                value={formData.student}
-                onChange={(e) => setFormData({ ...formData, student: e.target.value })}
-                className="w-full px-4 py-2 border rounded-lg"
-                required
-              >
-                <option value="">Select Student</option>
-                {students.map((student) => (
-                  <option key={student._id} value={student._id}>
-                    {student.name} ({student.studentId})
-                  </option>
-                ))}
-              </select>
-              <select
                 value={formData.course}
-                onChange={(e) => setFormData({ ...formData, course: e.target.value })}
+                onChange={(e) => {
+                  setFormData({ ...formData, course: e.target.value, student: '' })
+                }}
                 className="w-full px-4 py-2 border rounded-lg"
                 required
               >
@@ -616,6 +978,48 @@ const Attendance = () => {
                     {course.courseCode} - {course.courseName}
                   </option>
                 ))}
+              </select>
+              <select
+                value={formData.student}
+                onChange={(e) => setFormData({ ...formData, student: e.target.value })}
+                className="w-full px-4 py-2 border rounded-lg"
+                required
+                disabled={!formData.course}
+              >
+                <option value="">
+                  {formData.course ? 'Select Student' : 'Select Course First'}
+                </option>
+                {formData.course ? (
+                  (() => {
+                    // Find the selected course
+                    const selectedCourse = courses.find(c => c._id === formData.course || c._id?.toString() === formData.course)
+                    // Get enrolled students from the course
+                    const enrolledStudents = selectedCourse?.enrolledStudents || []
+                    // Extract enrolled student IDs (handle both populated objects and IDs)
+                    const enrolledStudentIds = enrolledStudents.map(enrolled => {
+                      if (typeof enrolled === 'object' && enrolled._id) {
+                        return enrolled._id.toString()
+                      }
+                      return enrolled?.toString()
+                    }).filter(Boolean)
+                    
+                    // Filter students to only show enrolled ones
+                    const availableStudents = students.filter(student => {
+                      const studentId = student._id?.toString() || student._id
+                      return enrolledStudentIds.includes(studentId)
+                    })
+                    
+                    return availableStudents.length > 0 ? (
+                      availableStudents.map((student) => (
+                        <option key={student._id} value={student._id}>
+                          {student.name} ({student.studentId || 'N/A'})
+                        </option>
+                      ))
+                    ) : (
+                      <option value="" disabled>No students enrolled in this course</option>
+                    )
+                  })()
+                ) : null}
               </select>
               <input
                 type="date"
@@ -663,41 +1067,99 @@ const Attendance = () => {
 
       {showQRForm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
             <h2 className="text-2xl font-bold mb-4">Generate QR Code</h2>
             <form onSubmit={handleGenerateQR} className="space-y-4">
-              <select
-                value={qrFormData.courseId}
-                onChange={(e) =>
-                  setQRFormData({ ...qrFormData, courseId: e.target.value })
-                }
-                className="w-full px-4 py-2 border rounded-lg"
-                required
-              >
-                <option value="">Select Course</option>
-                {courses.map((course) => (
-                  <option key={course._id} value={course._id}>
-                    {course.courseCode} - {course.courseName}
-                  </option>
-                ))}
-              </select>
-              <input
-                type="number"
-                placeholder="Duration (minutes)"
-                value={qrFormData.duration}
-                onChange={(e) =>
-                  setQRFormData({ ...qrFormData, duration: parseInt(e.target.value) })
-                }
-                className="w-full px-4 py-2 border rounded-lg"
-                min="1"
-                max="120"
-              />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Year <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={qrFormData.year}
+                  onChange={(e) => handleYearChange(e.target.value)}
+                  className="w-full px-4 py-2 border rounded-lg"
+                  required
+                >
+                  <option value="">Select Year</option>
+                  {lecturerCourses.map((yearData, idx) => (
+                    <option key={idx} value={yearData.year}>
+                      {yearData.year}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              {qrFormData.year && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Semester <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={qrFormData.semester}
+                    onChange={(e) =>
+                      setQRFormData({ ...qrFormData, semester: e.target.value })
+                    }
+                    className="w-full px-4 py-2 border rounded-lg"
+                    required
+                  >
+                    <option value="">Select Semester</option>
+                    <option value="Semester 1">Semester 1</option>
+                    <option value="Semester 2">Semester 2</option>
+                    <option value="Semester 3">Semester 3</option>
+                    <option value="Semester 4">Semester 4</option>
+                    <option value="Semester 5">Semester 5</option>
+                    <option value="Semester 6">Semester 6</option>
+                    <option value="Semester 7">Semester 7</option>
+                    <option value="Semester 8">Semester 8</option>
+                  </select>
+                </div>
+              )}
+
+              {qrFormData.year && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Course <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={qrFormData.courseCode}
+                    onChange={(e) => handleCourseSelect(e.target.value)}
+                    className="w-full px-4 py-2 border rounded-lg"
+                    required
+                  >
+                    <option value="">Select Course</option>
+                    {getCoursesForYear(qrFormData.year).map((course, idx) => (
+                      <option key={idx} value={course.courseCode}>
+                        {course.courseCode} - {course.courseName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Duration (minutes)
+                </label>
+                <input
+                  type="number"
+                  placeholder="Duration (minutes)"
+                  value={qrFormData.duration}
+                  onChange={(e) =>
+                    setQRFormData({ ...qrFormData, duration: parseInt(e.target.value) || 60 })
+                  }
+                  className="w-full px-4 py-2 border rounded-lg"
+                  min="1"
+                  max="120"
+                  required
+                />
+              </div>
+
               <div className="flex space-x-4">
                 <button
                   type="button"
                   onClick={() => {
                     setShowQRForm(false)
-                    setQRFormData({ courseId: '', duration: 60 })
+                    setQRFormData({ year: '', semester: '', courseCode: '', courseName: '', duration: 60 })
                   }}
                   className="flex-1 bg-gray-200 text-gray-800 py-2 rounded-lg hover:bg-gray-300"
                 >

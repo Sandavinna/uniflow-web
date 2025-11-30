@@ -65,16 +65,30 @@ exports.getMessages = async (req, res) => {
     // For hostel_admin, ensure we don't filter by subWarden - they should see all messages
     // The subWarden field is just for reference, not for filtering visibility
 
-    console.log(`[Messages] User ${req.user.id} (${req.user.role}) fetching messages with query:`, query);
+    // Pagination
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
 
+    const total = await HostelMessage.countDocuments(query);
     const messages = await HostelMessage.find(query)
       .populate('student', 'name studentId email')
       .populate('subWarden', 'name email')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
 
-    console.log(`[Messages] Found ${messages.length} messages for user ${req.user.id} (${req.user.role})`);
-
-    res.json(messages);
+    res.json({
+      data: messages,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(total / limit),
+        totalItems: total,
+        itemsPerPage: limit,
+        hasNextPage: page < Math.ceil(total / limit),
+        hasPreviousPage: page > 1,
+      },
+    });
   } catch (error) {
     console.error('Error fetching messages:', error);
     res.status(500).json({ message: error.message });
@@ -99,6 +113,33 @@ exports.replyToMessage = async (req, res) => {
     await message.save();
 
     res.json(message);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Delete message
+// @route   DELETE /api/hostel/messages/:id
+// @access  Private (Admin, Hostel Admin, Student - own messages)
+exports.deleteMessage = async (req, res) => {
+  try {
+    const message = await HostelMessage.findById(req.params.id);
+
+    if (!message) {
+      return res.status(404).json({ message: 'Message not found' });
+    }
+
+    // Admin can delete any message
+    // Hostel admin can delete any message
+    // Students can only delete their own messages
+    if (req.user.role !== 'admin' && req.user.role !== 'hostel_admin') {
+      if (req.user.role === 'student' && message.student.toString() !== req.user.id) {
+        return res.status(403).json({ message: 'Not authorized' });
+      }
+    }
+
+    await message.deleteOne();
+    res.json({ message: 'Message deleted successfully' });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

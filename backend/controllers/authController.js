@@ -3,6 +3,9 @@ const PasswordResetToken = require('../models/PasswordResetToken');
 const generateToken = require('../utils/generateToken');
 const sendEmail = require('../utils/sendEmail');
 const crypto = require('crypto');
+const logger = require('../utils/logger');
+const { recordFailedAttempt, clearFailedAttempts } = require('../middleware/accountLockout');
+const { body, validationResult } = require('express-validator');
 
 // Password validation function
 const validatePassword = (password) => {
@@ -32,7 +35,13 @@ const validatePassword = (password) => {
 // @access  Public
 exports.register = async (req, res) => {
   try {
-    const { name, email, password, role, studentId, department, academicYear, phone } = req.body;
+    const { name, email, password, role, studentId, department, academicYear, phone, lecturerCourses } = req.body;
+
+    // Prevent admin registration through public registration
+    if (role === 'admin') {
+      logger.warn(`Admin registration attempt blocked from IP: ${req.ip}`);
+      return res.status(403).json({ message: 'Admin accounts cannot be created through registration. Please contact system administrator.' });
+    }
 
     // Validate password
     const passwordValidation = validatePassword(password);
@@ -54,8 +63,32 @@ exports.register = async (req, res) => {
       }
     }
 
+    // Validate lecturer courses
+    if (role === 'lecturer') {
+      if (!lecturerCourses || lecturerCourses.length === 0) {
+        return res.status(400).json({ message: 'Lecturers must add at least one course' });
+      }
+      for (const yearData of lecturerCourses) {
+        if (!yearData.year || !yearData.courses || yearData.courses.length === 0) {
+          return res.status(400).json({ message: 'Each year must have at least one course' });
+        }
+        for (const course of yearData.courses) {
+          if (!course.courseCode || !course.courseName) {
+            return res.status(400).json({ message: 'All courses must have both course code and course name' });
+          }
+        }
+      }
+    }
+
+    // Determine registration status
+    // Staff roles need approval, students and admins are auto-approved
+    const needsApproval = ['lecturer', 'medical_staff', 'canteen_staff', 'hostel_admin'].includes(role);
+    const registrationStatus = needsApproval ? 'pending' : 'approved';
+
+    logger.info(`Registration attempt - Role: ${role}, Needs Approval: ${needsApproval}, Status: ${registrationStatus}`);
+
     // Create user
-    const user = await User.create({
+    const userData = {
       name,
       email,
       password,
@@ -64,21 +97,59 @@ exports.register = async (req, res) => {
       department: (role === 'student' || role === 'lecturer') ? department : undefined,
       academicYear: role === 'student' ? academicYear : undefined,
       phone,
-    });
+      lecturerCourses: role === 'lecturer' ? lecturerCourses : undefined,
+      registrationStatus, // Explicitly set registration status
+    };
 
-    if (user) {
-      res.status(201).json({
+    const user = await User.create(userData);
+
+    // Define staff roles that need approval
+    const staffRoles = ['lecturer', 'medical_staff', 'canteen_staff', 'hostel_admin'];
+    
+    // Check the role - use the role from request body first, then fall back to user.role
+    const actualRole = role || user.role;
+    const isStaffRole = staffRoles.includes(actualRole);
+
+    logger.debug(`Registration - Role from request: "${role}", User role: "${user.role}", Actual role: "${actualRole}", Is staff: ${isStaffRole}`);
+
+    // For staff roles, ALWAYS set to pending and NEVER return a token
+    if (isStaffRole) {
+      // Force update to pending - do this immediately after creation
+      const updatedUser = await User.findByIdAndUpdate(
+        user._id, 
+        { registrationStatus: 'pending' }, 
+        { new: true }
+      );
+      logger.info(`Staff role registration - User: ${updatedUser._id}, Role: ${actualRole}, Status: ${updatedUser.registrationStatus}`);
+      
+      // Return response WITHOUT token - CRITICAL: Do not include token field at all
+      const responseData = {
         _id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
-        studentId: user.studentId,
-        academicYear: user.academicYear,
-        token: generateToken(user._id),
-      });
-    } else {
-      res.status(400).json({ message: 'Invalid user data' });
+        registrationStatus: 'pending',
+        message: 'Registration successful! Your account is pending admin approval. You will be notified once approved.',
+      };
+      
+      logger.debug(`Registration response (pending): User ${updatedUser._id}`);
+      return res.status(201).json(responseData);
     }
+
+    // For non-staff roles (students, admins), return token immediately
+    logger.info(`Non-staff registration - User: ${user._id}, Role: ${actualRole}, Auto-approved`);
+    const token = generateToken(user._id);
+    const responseData = {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      studentId: user.studentId,
+      academicYear: user.academicYear,
+      token: token,
+    };
+    logger.debug(`Registration response (approved): User ${user._id}`);
+    return res.status(201).json(responseData);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -102,6 +173,8 @@ exports.login = async (req, res) => {
     const user = await User.findOne({ email: normalizedEmail }).select('+password');
 
     if (!user) {
+      // Record failed attempt even if user doesn't exist (but don't reveal this)
+      recordFailedAttempt(normalizedEmail);
       return res.status(401).json({ message: 'Invalid email or password' });
     }
 
@@ -110,11 +183,42 @@ exports.login = async (req, res) => {
       return res.status(401).json({ message: 'Your account has been deactivated. Please contact administrator.' });
     }
 
+    // Check registration status - ensure it exists (for backward compatibility with existing users)
+    const registrationStatus = user.registrationStatus || 'approved';
+    logger.info(`Login attempt for user ${user._id} (${user.email}) - Role: ${user.role}, Status: ${registrationStatus}`);
+
+    // Check registration status for staff roles
+    if (registrationStatus === 'pending') {
+      logger.warn(`Login blocked: User ${user._id} has pending registration`);
+      recordFailedAttempt(normalizedEmail);
+      return res.status(403).json({ 
+        message: 'Your registration is pending admin approval. Please wait for approval before logging in.' 
+      });
+    }
+
+    if (registrationStatus === 'rejected') {
+      logger.warn(`Login blocked: User ${user._id} has rejected registration`);
+      recordFailedAttempt(normalizedEmail);
+      return res.status(403).json({ 
+        message: 'Your registration has been rejected. Please contact administrator for more information.' 
+      });
+    }
+
     // Verify password
     const isPasswordValid = await user.matchPassword(password);
     if (!isPasswordValid) {
+      logger.warn(`Failed login attempt for ${normalizedEmail}`);
+      recordFailedAttempt(normalizedEmail);
       return res.status(401).json({ message: 'Invalid email or password' });
     }
+
+    // Clear failed attempts on successful login
+    clearFailedAttempts(normalizedEmail);
+    logger.info(`Successful login for user ${user._id} (${user.email})`);
+
+    // Update last login
+    user.lastLogin = new Date();
+    await user.save();
 
     res.json({
       _id: user._id,
@@ -125,11 +229,12 @@ exports.login = async (req, res) => {
       department: user.department,
       academicYear: user.academicYear,
       profileImage: user.profileImage,
+      emailVerified: user.emailVerified || false,
       token: generateToken(user._id),
     });
   } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({ message: error.message || 'Server error. Please try again later.' });
+    logger.error('Login error:', error);
+    res.status(500).json({ message: 'Server error. Please try again later.' });
   }
 };
 
@@ -215,13 +320,13 @@ exports.forgotPassword = async (req, res) => {
     } catch (error) {
       // Delete token if email fails
       await PasswordResetToken.findOneAndDelete({ user: user._id, token: hashedToken });
-      console.error('Error sending email:', error);
+      logger.error('Error sending email:', error);
       res.status(500).json({
         message: 'Email could not be sent. Please try again later.',
       });
     }
   } catch (error) {
-    console.error('Error in forgotPassword:', error);
+    logger.error('Error in forgotPassword:', error);
     res.status(500).json({ message: error.message });
   }
 };
@@ -269,7 +374,7 @@ exports.resetPassword = async (req, res) => {
       message: 'Password reset successful. You can now login with your new password.',
     });
   } catch (error) {
-    console.error('Error in resetPassword:', error);
+    logger.error('Error in resetPassword:', error);
     res.status(500).json({ message: error.message });
   }
 };

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { toast } from 'react-toastify'
-import { FiMail, FiLock, FiUser, FiHash } from 'react-icons/fi'
+import { FiMail, FiLock, FiUser, FiHash, FiPlus, FiTrash2 } from 'react-icons/fi'
 
 const Register = () => {
   const [formData, setFormData] = useState({
@@ -15,6 +15,7 @@ const Register = () => {
     department: '',
     academicYear: '',
     phone: '',
+    lecturerCourses: [], // Array of { year, courses: [{ courseCode, courseName }] }
   })
   const [loading, setLoading] = useState(false)
   const { register } = useAuth()
@@ -65,15 +66,41 @@ const Register = () => {
       return
     }
 
+    // Validate lecturer courses
+    if (formData.role === 'lecturer') {
+      if (!formData.lecturerCourses || formData.lecturerCourses.length === 0) {
+        toast.error('Please add at least one course for your year(s)')
+        return
+      }
+      // Validate that each year has at least one course with both code and name
+      for (const yearData of formData.lecturerCourses) {
+        if (!yearData.courses || yearData.courses.length === 0) {
+          toast.error(`Please add at least one course for ${yearData.year}`)
+          return
+        }
+        for (const course of yearData.courses) {
+          if (!course.courseCode || !course.courseName) {
+            toast.error('Please fill in both course code and course name for all courses')
+            return
+          }
+        }
+      }
+    }
+
     setLoading(true)
 
     const { confirmPassword, ...registerData } = formData
     const result = await register(registerData)
 
     if (result.success) {
-      toast.success('Registration successful!')
-      const roleRoute = formData.role === 'medical_staff' ? 'medical_staff' : formData.role === 'canteen_staff' ? 'canteen_staff' : formData.role === 'hostel_admin' ? 'hostel_admin' : formData.role
-      navigate(`/${roleRoute}`)
+      if (result.pending) {
+        toast.success(result.message || 'Registration successful! Your account is pending admin approval.')
+        navigate('/login')
+      } else {
+        toast.success('Registration successful!')
+        const roleRoute = formData.role === 'medical_staff' ? 'medical_staff' : formData.role === 'canteen_staff' ? 'canteen_staff' : formData.role === 'hostel_admin' ? 'hostel_admin' : formData.role
+        navigate(`/${roleRoute}`)
+      }
     } else {
       toast.error(result.message || 'Registration failed')
     }
@@ -157,7 +184,6 @@ const Register = () => {
               <option value="medical_staff">Medical Staff</option>
               <option value="canteen_staff">Canteen Staff</option>
               <option value="hostel_admin">Hostel Admin</option>
-              <option value="admin">Admin</option>
             </select>
           </div>
 
@@ -214,6 +240,132 @@ const Register = () => {
                 className="input-field"
                 placeholder="Enter department"
               />
+            </div>
+          )}
+
+          {formData.role === 'lecturer' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Courses (Year-wise) <span className="text-red-500">*</span>
+              </label>
+              <div className="space-y-4 border border-gray-200 rounded-lg p-4 bg-gray-50">
+                {formData.lecturerCourses.length === 0 ? (
+                  <p className="text-sm text-gray-500 text-center py-2">
+                    No courses added. Click "Add Year" to start.
+                  </p>
+                ) : (
+                  formData.lecturerCourses.map((yearData, yearIndex) => (
+                    <div key={yearIndex} className="bg-white rounded-lg p-4 border border-gray-300">
+                      <div className="flex items-center justify-between mb-3">
+                        <label className="block text-sm font-semibold text-gray-700">
+                          Year: {yearData.year}
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newCourses = formData.lecturerCourses.filter((_, idx) => idx !== yearIndex)
+                            setFormData({ ...formData, lecturerCourses: newCourses })
+                          }}
+                          className="text-red-600 hover:text-red-700"
+                        >
+                          <FiTrash2 size={18} />
+                        </button>
+                      </div>
+                      <div className="space-y-2">
+                        {yearData.courses.map((course, courseIndex) => (
+                          <div key={courseIndex} className="flex gap-2">
+                            <input
+                              type="text"
+                              placeholder="Course Code (e.g., CS101)"
+                              value={course.courseCode}
+                              onChange={(e) => {
+                                const newCourses = [...formData.lecturerCourses]
+                                newCourses[yearIndex].courses[courseIndex].courseCode = e.target.value
+                                setFormData({ ...formData, lecturerCourses: newCourses })
+                              }}
+                              className="flex-1 px-3 py-2 border rounded-lg text-sm"
+                              required
+                            />
+                            <input
+                              type="text"
+                              placeholder="Course Name"
+                              value={course.courseName}
+                              onChange={(e) => {
+                                const newCourses = [...formData.lecturerCourses]
+                                newCourses[yearIndex].courses[courseIndex].courseName = e.target.value
+                                setFormData({ ...formData, lecturerCourses: newCourses })
+                              }}
+                              className="flex-1 px-3 py-2 border rounded-lg text-sm"
+                              required
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newCourses = [...formData.lecturerCourses]
+                                newCourses[yearIndex].courses = newCourses[yearIndex].courses.filter((_, idx) => idx !== courseIndex)
+                                setFormData({ ...formData, lecturerCourses: newCourses })
+                              }}
+                              className="text-red-600 hover:text-red-700 px-2"
+                            >
+                              <FiTrash2 size={16} />
+                            </button>
+                          </div>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newCourses = [...formData.lecturerCourses]
+                            newCourses[yearIndex].courses.push({ courseCode: '', courseName: '' })
+                            setFormData({ ...formData, lecturerCourses: newCourses })
+                          }}
+                          className="text-sm text-primary-600 hover:text-primary-700 flex items-center space-x-1"
+                        >
+                          <FiPlus size={14} />
+                          <span>Add Course</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+                <div className="flex gap-2">
+                  <select
+                    id="newYearSelect"
+                    className="flex-1 px-3 py-2 border rounded-lg text-sm"
+                    defaultValue=""
+                  >
+                    <option value="">Select Year to Add</option>
+                    {['Year 1', 'Year 2', 'Year 3', 'Year 4', 'Year 5']
+                      .filter(year => !formData.lecturerCourses.some(y => y.year === year))
+                      .map(year => (
+                        <option key={year} value={year}>{year}</option>
+                      ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const select = document.getElementById('newYearSelect')
+                      const selectedYear = select.value
+                      if (selectedYear) {
+                        setFormData({
+                          ...formData,
+                          lecturerCourses: [
+                            ...formData.lecturerCourses,
+                            { year: selectedYear, courses: [{ courseCode: '', courseName: '' }] }
+                          ]
+                        })
+                        select.value = ''
+                      }
+                    }}
+                    className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 flex items-center space-x-1 text-sm"
+                  >
+                    <FiPlus size={16} />
+                    <span>Add Year</span>
+                  </button>
+                </div>
+              </div>
+              {formData.role === 'lecturer' && formData.lecturerCourses.length === 0 && (
+                <p className="text-xs text-red-500 mt-1">Please add at least one course</p>
+              )}
             </div>
           )}
 

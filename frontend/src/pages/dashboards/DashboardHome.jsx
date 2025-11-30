@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import { useAuth } from '../../context/AuthContext'
 import { FiBook, FiCalendar, FiUsers, FiHeart, FiCheckCircle, FiXCircle, FiMessageSquare, FiTool } from 'react-icons/fi'
 
 const DashboardHome = ({ role }) => {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const [stats, setStats] = useState({
     courses: 0,
     attendance: 0,
@@ -71,6 +73,34 @@ const DashboardHome = ({ role }) => {
     }
   }
 
+  const getNavigationPath = (title, role) => {
+    const basePath = {
+      admin: '/admin',
+      student: '/student',
+      lecturer: '/lecturer',
+      medical_staff: '/medical_staff',
+      canteen_staff: '/canteen_staff',
+      hostel_admin: '/hostel_admin',
+    }[role]
+
+    const pathMap = {
+      'Courses': `${basePath}/courses`,
+      'Attendance Records': `${basePath}/attendance`,
+      'Notices': `${basePath}/notices`,
+      'Hostel Rooms': `${basePath}/hostel`,
+      'Messages': `${basePath}/hostel?tab=messages`,
+      'Maintenance Requests': `${basePath}/hostel?tab=maintenance`,
+    }
+
+    return pathMap[title] || basePath
+  }
+
+  const handleStatCardClick = (path) => {
+    if (path) {
+      navigate(path)
+    }
+  }
+
   const statCards = role === 'medical_staff' || role === 'canteen_staff'
     ? [
         {
@@ -78,6 +108,7 @@ const DashboardHome = ({ role }) => {
           value: stats.notices,
           icon: FiUsers,
           color: 'bg-purple-500',
+          path: getNavigationPath('Notices', role),
         },
       ]
     : role === 'hostel_admin'
@@ -87,24 +118,28 @@ const DashboardHome = ({ role }) => {
           value: stats.hostels || 0,
           icon: FiUsers,
           color: 'bg-purple-500',
+          path: getNavigationPath('Hostel Rooms', role),
         },
         {
           title: 'Messages',
           value: stats.messages || 0,
           icon: FiMessageSquare,
           color: 'bg-blue-500',
+          path: getNavigationPath('Messages', role),
         },
         {
           title: 'Maintenance Requests',
           value: stats.maintenance || 0,
           icon: FiTool,
           color: 'bg-orange-500',
+          path: getNavigationPath('Maintenance Requests', role),
         },
         {
           title: 'Notices',
           value: stats.notices || 0,
           icon: FiBook,
           color: 'bg-green-500',
+          path: getNavigationPath('Notices', role),
         },
       ]
     : [
@@ -113,18 +148,21 @@ const DashboardHome = ({ role }) => {
           value: stats.courses,
           icon: FiBook,
           color: 'bg-blue-500',
+          path: getNavigationPath('Courses', role),
         },
         {
           title: 'Attendance Records',
           value: stats.attendance,
           icon: FiCalendar,
           color: 'bg-green-500',
+          path: getNavigationPath('Attendance Records', role),
         },
         {
           title: 'Notices',
           value: stats.notices,
           icon: FiUsers,
           color: 'bg-purple-500',
+          path: getNavigationPath('Notices', role),
         },
       ]
 
@@ -145,7 +183,8 @@ const DashboardHome = ({ role }) => {
           return (
             <div
               key={index}
-              className="card group hover:scale-105 transition-transform duration-300"
+              onClick={() => handleStatCardClick(stat.path)}
+              className="card group hover:scale-105 transition-transform duration-300 cursor-pointer"
               style={{animationDelay: `${index * 100}ms`}}
             >
               <div className="flex items-center justify-between">
@@ -203,7 +242,10 @@ const DashboardHome = ({ role }) => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {role === 'admin' && (
             <>
-              <button className="group p-6 border-2 border-gray-200 rounded-xl hover:border-primary-300 hover:bg-gradient-to-br hover:from-primary-50 hover:to-blue-50 text-left transition-all duration-300 hover:shadow-md">
+              <button 
+                onClick={() => navigate('/admin/registration-requests')}
+                className="group p-6 border-2 border-gray-200 rounded-xl hover:border-primary-300 hover:bg-gradient-to-br hover:from-primary-50 hover:to-blue-50 text-left transition-all duration-300 hover:shadow-md"
+              >
                 <div className="p-3 bg-primary-100 rounded-lg w-fit mb-3 group-hover:bg-primary-500 transition-colors">
                   <FiUsers className="text-primary-600 group-hover:text-white" size={24} />
                 </div>
@@ -214,7 +256,10 @@ const DashboardHome = ({ role }) => {
           )}
           {role === 'student' && (
             <>
-              <button className="group p-6 border-2 border-gray-200 rounded-xl hover:border-primary-300 hover:bg-gradient-to-br hover:from-primary-50 hover:to-blue-50 text-left transition-all duration-300 hover:shadow-md">
+              <button 
+                onClick={() => navigate('/student/courses')}
+                className="group p-6 border-2 border-gray-200 rounded-xl hover:border-primary-300 hover:bg-gradient-to-br hover:from-primary-50 hover:to-blue-50 text-left transition-all duration-300 hover:shadow-md"
+              >
                 <div className="p-3 bg-primary-100 rounded-lg w-fit mb-3 group-hover:bg-primary-500 transition-colors">
                   <FiBook className="text-primary-600 group-hover:text-white" size={24} />
                 </div>
@@ -225,7 +270,10 @@ const DashboardHome = ({ role }) => {
           )}
           {role === 'lecturer' && (
             <>
-              <button className="group p-6 border-2 border-gray-200 rounded-xl hover:border-primary-300 hover:bg-gradient-to-br hover:from-primary-50 hover:to-blue-50 text-left transition-all duration-300 hover:shadow-md">
+              <button 
+                onClick={() => navigate('/lecturer/attendance')}
+                className="group p-6 border-2 border-gray-200 rounded-xl hover:border-primary-300 hover:bg-gradient-to-br hover:from-primary-50 hover:to-blue-50 text-left transition-all duration-300 hover:shadow-md"
+              >
                 <div className="p-3 bg-primary-100 rounded-lg w-fit mb-3 group-hover:bg-primary-500 transition-colors">
                   <FiCalendar className="text-primary-600 group-hover:text-white" size={24} />
                 </div>

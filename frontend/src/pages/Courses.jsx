@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import axios from 'axios'
 import { useAuth } from '../context/AuthContext'
 import { toast } from 'react-toastify'
-import { FiBook, FiUser, FiCalendar, FiPlus } from 'react-icons/fi'
+import { FiBook, FiUser, FiCalendar, FiPlus, FiTrash2 } from 'react-icons/fi'
 
 const Courses = () => {
   const { user } = useAuth()
@@ -31,7 +31,8 @@ const Courses = () => {
   const fetchLecturers = async () => {
     try {
       const response = await axios.get('/api/users?role=lecturer')
-      setLecturers(response.data)
+      // Handle paginated response
+      setLecturers(response.data.data || response.data || [])
     } catch (error) {
       console.error('Failed to fetch lecturers:', error)
     }
@@ -40,7 +41,8 @@ const Courses = () => {
   const fetchCourses = async () => {
     try {
       const response = await axios.get('/api/courses')
-      setCourses(response.data)
+      // Handle paginated response
+      setCourses(response.data.data || response.data || [])
     } catch (error) {
       toast.error('Failed to fetch courses')
     } finally {
@@ -80,6 +82,31 @@ const Courses = () => {
     }
   }
 
+  const handleDelete = async (courseId) => {
+    if (!window.confirm('Are you sure you want to delete this course? This action cannot be undone.')) {
+      return
+    }
+    try {
+      await axios.delete(`/api/courses/${courseId}`)
+      toast.success('Course deleted successfully!')
+      fetchCourses()
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to delete course')
+    }
+  }
+
+  // Check if user can delete a course
+  const canDeleteCourse = (course) => {
+    if (user?.role === 'admin') {
+      return true // Admin can delete any course
+    }
+    if (user?.role === 'lecturer') {
+      // Lecturer can delete their own courses
+      return course.lecturer?._id === user._id || course.lecturer === user._id
+    }
+    return false
+  }
+
   if (loading) {
     return <div className="text-center py-12">Loading...</div>
   }
@@ -106,11 +133,22 @@ const Courses = () => {
             className="bg-white rounded-lg shadow p-6 border border-gray-200"
           >
             <div className="flex items-start justify-between mb-4">
-              <div>
+              <div className="flex-1">
                 <h3 className="text-xl font-bold text-gray-900">{course.courseName}</h3>
                 <p className="text-sm text-gray-600">{course.courseCode}</p>
               </div>
-              <FiBook className="text-primary-600" size={24} />
+              <div className="flex items-center space-x-2">
+                <FiBook className="text-primary-600" size={24} />
+                {canDeleteCourse(course) && (
+                  <button
+                    onClick={() => handleDelete(course._id)}
+                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    title="Delete Course"
+                  >
+                    <FiTrash2 size={20} />
+                  </button>
+                )}
+              </div>
             </div>
             <p className="text-gray-700 mb-4">{course.description}</p>
             <div className="space-y-2 mb-4">

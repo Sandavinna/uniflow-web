@@ -14,10 +14,28 @@ exports.getHostels = async (req, res) => {
       query.isAvailable = req.query.isAvailable === 'true';
     }
 
-    const hostels = await Hostel.find(query)
-      .populate('occupants.student', 'name studentId email phone');
+    // Pagination
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
 
-    res.json(hostels);
+    const total = await Hostel.countDocuments(query);
+    const hostels = await Hostel.find(query)
+      .populate('occupants.student', 'name studentId email phone')
+      .skip(skip)
+      .limit(limit);
+
+    res.json({
+      data: hostels,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(total / limit),
+        totalItems: total,
+        itemsPerPage: limit,
+        hasNextPage: page < Math.ceil(total / limit),
+        hasPreviousPage: page > 1,
+      },
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -172,6 +190,36 @@ exports.getStudentHostel = async (req, res) => {
     }
 
     res.json(hostel);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Delete hostel room
+// @route   DELETE /api/hostel/:id
+// @access  Private (Admin, Hostel Admin)
+exports.deleteHostel = async (req, res) => {
+  try {
+    const hostel = await Hostel.findById(req.params.id);
+    
+    if (!hostel) {
+      return res.status(404).json({ message: 'Hostel room not found' });
+    }
+
+    // Only admin and hostel admin can delete hostels
+    if (req.user.role !== 'admin' && req.user.role !== 'hostel_admin') {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    // Check if there are active occupants
+    if (hostel.currentOccupancy > 0) {
+      return res.status(400).json({ 
+        message: 'Cannot delete hostel room with active occupants. Please check out all students first.' 
+      });
+    }
+
+    await hostel.deleteOne();
+    res.json({ message: 'Hostel room deleted successfully' });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

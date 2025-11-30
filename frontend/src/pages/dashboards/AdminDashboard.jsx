@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Layout from '../../components/Layout'
 import DashboardHome from './DashboardHome'
+import RegistrationRequests from './RegistrationRequests'
 import Courses from '../Courses'
 import Attendance from '../Attendance'
 import Notices from '../Notices'
@@ -14,6 +15,7 @@ const AdminDashboard = () => {
     <Layout>
       <Routes>
         <Route index element={<DashboardHome role="admin" />} />
+        <Route path="registration-requests" element={<RegistrationRequests />} />
         <Route path="courses" element={<Courses />} />
         <Route path="attendance" element={<Attendance />} />
         <Route path="notices" element={<Notices />} />

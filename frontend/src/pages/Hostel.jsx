@@ -1,21 +1,19 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import axios from 'axios'
 import { useAuth } from '../context/AuthContext'
 import { toast } from 'react-toastify'
-import { FiHome, FiUser, FiMessageSquare, FiTool, FiSend, FiCheck } from 'react-icons/fi'
+import { FiMessageSquare, FiTool, FiSend, FiCheck, FiTrash2 } from 'react-icons/fi'
 
 const Hostel = () => {
   const { user } = useAuth()
-  const [activeTab, setActiveTab] = useState('rooms')
-  const [hostels, setHostels] = useState([])
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'messages')
   const [messages, setMessages] = useState([])
   const [maintenanceRequests, setMaintenanceRequests] = useState([])
   const [loading, setLoading] = useState(true)
   const [showMessageModal, setShowMessageModal] = useState(false)
   const [showMaintenanceModal, setShowMaintenanceModal] = useState(false)
-  const [showAllocateModal, setShowAllocateModal] = useState(false)
-  const [selectedHostel, setSelectedHostel] = useState(null)
-  const [students, setStudents] = useState([])
   const [messageData, setMessageData] = useState({
     subject: '',
     message: '',
@@ -26,27 +24,30 @@ const Hostel = () => {
     priority: 'medium',
     roomNumber: '',
   })
-  const [allocateData, setAllocateData] = useState({
-    studentId: '',
-  })
+
+  useEffect(() => {
+    const tabFromUrl = searchParams.get('tab')
+    if (tabFromUrl && ['messages', 'maintenance'].includes(tabFromUrl)) {
+      setActiveTab(tabFromUrl)
+    }
+  }, [searchParams])
 
   useEffect(() => {
     fetchData()
   }, [activeTab, user])
 
+  const handleTabChange = (tab) => {
+    setActiveTab(tab)
+    setSearchParams({ tab })
+  }
+
   const fetchData = async () => {
     try {
-      const [hostelsRes] = await Promise.all([
-        axios.get('/api/hostel'),
-        activeTab === 'messages' && axios.get('/api/hostel/messages').then(res => setMessages(res.data)).catch(() => {}),
-        activeTab === 'maintenance' && axios.get('/api/hostel/maintenance').then(res => setMaintenanceRequests(res.data)).catch(() => {}),
-        (user?.role === 'admin' || user?.role === 'hostel_admin') && axios.get('/api/users?role=student').then(res => setStudents(res.data)).catch(() => {}),
-      ])
-      setHostels(hostelsRes.data)
       if (activeTab === 'messages') {
         try {
           const messagesRes = await axios.get('/api/hostel/messages')
-          setMessages(messagesRes.data || [])
+          // Handle paginated response
+          setMessages(messagesRes.data.data || messagesRes.data || [])
         } catch (error) {
           console.error('Error fetching messages:', error)
           toast.error(error.response?.data?.message || 'Failed to fetch messages')
@@ -56,7 +57,8 @@ const Hostel = () => {
       if (activeTab === 'maintenance') {
         try {
           const maintenanceRes = await axios.get('/api/hostel/maintenance')
-          setMaintenanceRequests(maintenanceRes.data || [])
+          // Handle paginated response
+          setMaintenanceRequests(maintenanceRes.data.data || maintenanceRes.data || [])
         } catch (error) {
           console.error('Error fetching maintenance requests:', error)
           toast.error(error.response?.data?.message || 'Failed to fetch maintenance requests')
@@ -81,7 +83,8 @@ const Hostel = () => {
       if (activeTab === 'messages') {
         try {
           const messagesRes = await axios.get('/api/hostel/messages')
-          setMessages(messagesRes.data || [])
+          // Handle paginated response
+          setMessages(messagesRes.data.data || messagesRes.data || [])
         } catch (error) {
           console.error('Error refreshing messages:', error)
         }
@@ -126,17 +129,29 @@ const Hostel = () => {
     }
   }
 
-  const handleAllocate = async (e) => {
-    e.preventDefault()
+  const handleDeleteMessage = async (messageId) => {
+    if (!window.confirm('Are you sure you want to delete this message?')) {
+      return
+    }
     try {
-      await axios.post(`/api/hostel/${selectedHostel}/allocate`, allocateData)
-      toast.success('Room allocated successfully!')
-      setShowAllocateModal(false)
-      setSelectedHostel(null)
-      setAllocateData({ studentId: '' })
+      await axios.delete(`/api/hostel/messages/${messageId}`)
+      toast.success('Message deleted successfully!')
       fetchData()
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to allocate room')
+      toast.error(error.response?.data?.message || 'Failed to delete message')
+    }
+  }
+
+  const handleDeleteMaintenance = async (requestId) => {
+    if (!window.confirm('Are you sure you want to delete this maintenance request?')) {
+      return
+    }
+    try {
+      await axios.delete(`/api/hostel/maintenance/${requestId}`)
+      toast.success('Maintenance request deleted successfully!')
+      fetchData()
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to delete maintenance request')
     }
   }
 
@@ -200,20 +215,9 @@ const Hostel = () => {
       <div className="mb-6">
         <div className="border-b border-gray-200">
           <nav className="-mb-px flex space-x-8">
-            <button
-              onClick={() => setActiveTab('rooms')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'rooms'
-                  ? 'border-primary-500 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <FiHome className="inline mr-2" />
-              Rooms
-            </button>
             {user?.role === 'student' && (
               <button
-                onClick={() => setActiveTab('messages')}
+                onClick={() => handleTabChange('messages')}
                 className={`py-4 px-1 border-b-2 font-medium text-sm ${
                   activeTab === 'messages'
                     ? 'border-primary-500 text-primary-600'
@@ -226,7 +230,7 @@ const Hostel = () => {
             )}
             {user?.role === 'student' && (
               <button
-                onClick={() => setActiveTab('maintenance')}
+                onClick={() => handleTabChange('maintenance')}
                 className={`py-4 px-1 border-b-2 font-medium text-sm ${
                   activeTab === 'maintenance'
                     ? 'border-primary-500 text-primary-600'
@@ -240,7 +244,7 @@ const Hostel = () => {
             {(user?.role === 'admin' || user?.role === 'hostel_admin') && (
               <>
                 <button
-                  onClick={() => setActiveTab('messages')}
+                  onClick={() => handleTabChange('messages')}
                   className={`py-4 px-1 border-b-2 font-medium text-sm ${
                     activeTab === 'messages'
                       ? 'border-primary-500 text-primary-600'
@@ -251,7 +255,7 @@ const Hostel = () => {
                   Messages
                 </button>
                 <button
-                  onClick={() => setActiveTab('maintenance')}
+                  onClick={() => handleTabChange('maintenance')}
                   className={`py-4 px-1 border-b-2 font-medium text-sm ${
                     activeTab === 'maintenance'
                       ? 'border-primary-500 text-primary-600'
@@ -267,73 +271,6 @@ const Hostel = () => {
         </div>
       </div>
 
-      {activeTab === 'rooms' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {hostels.map((hostel) => (
-            <div
-              key={hostel._id}
-              className="bg-white rounded-lg shadow p-6 border border-gray-200"
-            >
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900">{hostel.name}</h3>
-                  <p className="text-sm text-gray-600">
-                    Block {hostel.block} • Room {hostel.roomNumber}
-                  </p>
-                </div>
-                <FiHome className="text-primary-600" size={24} />
-              </div>
-              <div className="space-y-2 mb-4">
-                <p className="text-sm text-gray-600">
-                  Capacity: {hostel.currentOccupancy}/{hostel.capacity}
-                </p>
-                <p className="text-sm text-gray-600">Rent: ${hostel.monthlyRent}/month</p>
-                <p className="text-sm text-gray-600">
-                  Status:{' '}
-                  <span
-                    className={`font-semibold ${
-                      hostel.isAvailable ? 'text-green-600' : 'text-red-600'
-                    }`}
-                  >
-                    {hostel.isAvailable ? 'Available' : 'Full'}
-                  </span>
-                </p>
-                {hostel.amenities && hostel.amenities.length > 0 && (
-                  <div className="text-sm text-gray-600">
-                    <p className="font-medium">Amenities:</p>
-                    <p>{hostel.amenities.join(', ')}</p>
-                  </div>
-                )}
-              </div>
-              {hostel.occupants && hostel.occupants.length > 0 && (
-                <div className="mt-4 pt-4 border-t">
-                  <p className="text-sm font-semibold mb-2">Occupants:</p>
-                  {hostel.occupants
-                    .filter((o) => o.isActive)
-                    .map((occupant, idx) => (
-                      <div key={idx} className="text-sm text-gray-600">
-                        <FiUser className="inline mr-2" />
-                        {occupant.student?.name || 'N/A'}
-                      </div>
-                    ))}
-                </div>
-              )}
-              {(user?.role === 'admin' || user?.role === 'hostel_admin') && hostel.isAvailable && (
-                <button
-                  onClick={() => {
-                    setSelectedHostel(hostel._id)
-                    setShowAllocateModal(true)
-                  }}
-                  className="mt-4 w-full bg-primary-600 text-white py-2 rounded-lg hover:bg-primary-700"
-                >
-                  Allocate Room
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-
       {activeTab === 'messages' && (
         <div className="space-y-4">
           {messages.map((message) => (
@@ -342,20 +279,31 @@ const Hostel = () => {
               className="bg-white rounded-lg shadow p-6 border border-gray-200"
             >
               <div className="flex items-start justify-between mb-4">
-                <div>
+                <div className="flex-1">
                   <h3 className="text-lg font-bold text-gray-900">{message.subject}</h3>
                   <p className="text-sm text-gray-600">
                     From: {message.student?.name} ({message.student?.studentId}) •{' '}
                     {new Date(message.createdAt).toLocaleDateString()}
                   </p>
                 </div>
-                <span
-                  className={`px-3 py-1 text-xs font-semibold rounded-full ${getStatusColor(
-                    message.status
-                  )}`}
-                >
-                  {message.status}
-                </span>
+                <div className="flex items-center space-x-2">
+                  <span
+                    className={`px-3 py-1 text-xs font-semibold rounded-full ${getStatusColor(
+                      message.status
+                    )}`}
+                  >
+                    {message.status}
+                  </span>
+                  {(user?.role === 'admin' || user?.role === 'hostel_admin') && (
+                    <button
+                      onClick={() => handleDeleteMessage(message._id)}
+                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Delete Message"
+                    >
+                      <FiTrash2 size={18} />
+                    </button>
+                  )}
+                </div>
               </div>
               <p className="text-gray-700 mb-4 whitespace-pre-wrap">{message.message}</p>
               {message.reply && (
@@ -407,7 +355,7 @@ const Hostel = () => {
               className="bg-white rounded-lg shadow p-6 border border-gray-200"
             >
               <div className="flex items-start justify-between mb-4">
-                <div>
+                <div className="flex-1">
                   <h3 className="text-lg font-bold text-gray-900">
                     {getIssueTypeLabel(request.issueType)}
                   </h3>
@@ -417,25 +365,36 @@ const Hostel = () => {
                     {new Date(request.createdAt).toLocaleDateString()}
                   </p>
                 </div>
-                <div className="flex flex-col items-end space-y-2">
-                  <span
-                    className={`px-3 py-1 text-xs font-semibold rounded-full ${getStatusColor(
-                      request.status
-                    )}`}
-                  >
-                    {request.status}
-                  </span>
-                  <span
-                    className={`px-3 py-1 text-xs font-semibold rounded-full ${
-                      request.priority === 'urgent'
-                        ? 'bg-red-100 text-red-800'
-                        : request.priority === 'high'
-                        ? 'bg-orange-100 text-orange-800'
-                        : 'bg-blue-100 text-blue-800'
-                    }`}
-                  >
-                    {request.priority}
-                  </span>
+                <div className="flex items-center space-x-2">
+                  <div className="flex flex-col items-end space-y-2">
+                    <span
+                      className={`px-3 py-1 text-xs font-semibold rounded-full ${getStatusColor(
+                        request.status
+                      )}`}
+                    >
+                      {request.status}
+                    </span>
+                    <span
+                      className={`px-3 py-1 text-xs font-semibold rounded-full ${
+                        request.priority === 'urgent'
+                          ? 'bg-red-100 text-red-800'
+                          : request.priority === 'high'
+                          ? 'bg-orange-100 text-orange-800'
+                          : 'bg-blue-100 text-blue-800'
+                      }`}
+                    >
+                      {request.priority}
+                    </span>
+                  </div>
+                  {(user?.role === 'admin' || user?.role === 'hostel_admin') && (
+                    <button
+                      onClick={() => handleDeleteMaintenance(request._id)}
+                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Delete Maintenance Request"
+                    >
+                      <FiTrash2 size={18} />
+                    </button>
+                  )}
                 </div>
               </div>
               <p className="text-gray-700 mb-4">{request.description}</p>
@@ -579,48 +538,6 @@ const Hostel = () => {
         </div>
       )}
 
-      {showAllocateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full">
-            <h2 className="text-2xl font-bold mb-4">Allocate Room</h2>
-            <form onSubmit={handleAllocate} className="space-y-4">
-              <select
-                value={allocateData.studentId}
-                onChange={(e) =>
-                  setAllocateData({ ...allocateData, studentId: e.target.value })
-                }
-                className="w-full px-4 py-2 border rounded-lg"
-                required
-              >
-                <option value="">Select Student</option>
-                {students.map((student) => (
-                  <option key={student._id} value={student._id}>
-                    {student.name} ({student.studentId})
-                  </option>
-                ))}
-              </select>
-              <div className="flex space-x-4">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowAllocateModal(false)
-                    setSelectedHostel(null)
-                  }}
-                  className="flex-1 bg-gray-200 text-gray-800 py-2 rounded-lg hover:bg-gray-300"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 bg-primary-600 text-white py-2 rounded-lg hover:bg-primary-700"
-                >
-                  Allocate
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

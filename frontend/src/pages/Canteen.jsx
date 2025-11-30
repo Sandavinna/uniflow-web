@@ -17,6 +17,8 @@ const Canteen = () => {
     category: 'breakfast',
     isAvailable: true,
   })
+  const [imageFile, setImageFile] = useState(null)
+  const [imagePreview, setImagePreview] = useState(null)
 
   useEffect(() => {
     fetchData()
@@ -25,10 +27,12 @@ const Canteen = () => {
   const fetchData = async () => {
     try {
       const menuRes = await axios.get('/api/canteen/menu')
+      // Handle paginated response
+      const menuData = menuRes.data.data || menuRes.data || []
       // Filter menu based on role - students see only available, staff see all
       const filteredMenu = user?.role === 'student' 
-        ? menuRes.data.filter(item => item.isAvailable)
-        : menuRes.data
+        ? menuData.filter(item => item.isAvailable)
+        : menuData
       setMenu(filteredMenu)
     } catch (error) {
       toast.error('Failed to fetch menu')
@@ -46,6 +50,8 @@ const Canteen = () => {
       category: item.category,
       isAvailable: item.isAvailable !== undefined ? item.isAvailable : true,
     })
+    setImageFile(null)
+    setImagePreview(item.image ? `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}${item.image}` : null)
     setShowMenuModal(true)
   }
 
@@ -62,26 +68,51 @@ const Canteen = () => {
     }
   }
 
+  const handleImageChange = (e) => {
+    const file = e.target.files[0]
+    if (file) {
+      setImageFile(file)
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setImagePreview(reader.result)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
   const handleCreateMenuItem = async (e) => {
     e.preventDefault()
     try {
+      const formDataToSend = new FormData()
+      formDataToSend.append('name', formData.name)
+      formDataToSend.append('description', formData.description)
+      formDataToSend.append('price', formData.price)
+      formDataToSend.append('category', formData.category)
+      formDataToSend.append('isAvailable', formData.isAvailable)
+
+      if (imageFile) {
+        formDataToSend.append('image', imageFile)
+      }
+
       if (editingItem) {
-        await axios.put(`/api/canteen/menu/${editingItem._id}`, {
-          ...formData,
-          price: parseFloat(formData.price),
-          isAvailable: formData.isAvailable,
+        await axios.put(`/api/canteen/menu/${editingItem._id}`, formDataToSend, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
         })
         toast.success('Menu item updated successfully!')
       } else {
-        await axios.post('/api/canteen/menu', {
-          ...formData,
-          price: parseFloat(formData.price),
-          isAvailable: formData.isAvailable,
+        await axios.post('/api/canteen/menu', formDataToSend, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
         })
         toast.success('Menu item created successfully!')
       }
       setShowMenuModal(false)
       setEditingItem(null)
+      setImageFile(null)
+      setImagePreview(null)
       setFormData({
         name: '',
         description: '',
@@ -108,6 +139,8 @@ const Canteen = () => {
           <button
             onClick={() => {
               setEditingItem(null)
+              setImageFile(null)
+              setImagePreview(null)
               setFormData({
                 name: '',
                 description: '',
@@ -130,39 +163,53 @@ const Canteen = () => {
           {menu.map((item) => (
             <div
               key={item._id}
-              className="bg-white rounded-lg shadow p-6 border border-gray-200"
+              className="bg-white rounded-lg shadow overflow-hidden border border-gray-200"
             >
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900">{item.name}</h3>
-                  <p className="text-sm text-gray-600 capitalize">{item.category}</p>
-                  {(user?.role === 'admin' || user?.role === 'canteen_staff') && !item.isAvailable && (
-                    <span className="text-xs text-red-600 font-semibold">(Unavailable)</span>
+              {item.image && (
+                <div className="w-full h-48 overflow-hidden bg-gray-100">
+                  <img
+                    src={`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}${item.image}`}
+                    alt={item.name}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      e.target.style.display = 'none'
+                    }}
+                  />
+                </div>
+              )}
+              <div className="p-6">
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <h3 className="text-xl font-bold text-gray-900">{item.name}</h3>
+                    <p className="text-sm text-gray-600 capitalize">{item.category}</p>
+                    {(user?.role === 'admin' || user?.role === 'canteen_staff') && !item.isAvailable && (
+                      <span className="text-xs text-red-600 font-semibold">(Unavailable)</span>
+                    )}
+                  </div>
+                  {!item.image && <FiCoffee className="text-primary-600" size={24} />}
+                </div>
+                <p className="text-gray-700 mb-4">{item.description}</p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-2xl font-bold text-primary-600">LKR {item.price.toFixed(2)}</p>
+                  </div>
+                  {(user?.role === 'admin' || user?.role === 'canteen_staff') && (
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => handleEditItem(item)}
+                        className="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700"
+                      >
+                        <FiEdit />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteItem(item._id)}
+                        className="bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700"
+                      >
+                        <FiTrash2 />
+                      </button>
+                    </div>
                   )}
                 </div>
-                <FiCoffee className="text-primary-600" size={24} />
-              </div>
-              <p className="text-gray-700 mb-4">{item.description}</p>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-2xl font-bold text-primary-600">LKR {item.price.toFixed(2)}</p>
-                </div>
-                {(user?.role === 'admin' || user?.role === 'canteen_staff') && (
-                  <div className="flex space-x-2">
-                    <button
-                      onClick={() => handleEditItem(item)}
-                      className="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700"
-                    >
-                      <FiEdit />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteItem(item._id)}
-                      className="bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700"
-                    >
-                      <FiTrash2 />
-                    </button>
-                  </div>
-                )}
               </div>
             </div>
           ))}
@@ -212,6 +259,26 @@ const Canteen = () => {
                 <option value="snacks">Snacks</option>
                 <option value="beverages">Beverages</option>
               </select>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Food Image
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageChange}
+                  className="w-full px-4 py-2 border rounded-lg"
+                />
+                {imagePreview && (
+                  <div className="mt-2">
+                    <img
+                      src={imagePreview}
+                      alt="Preview"
+                      className="w-full h-48 object-cover rounded-lg border border-gray-300"
+                    />
+                  </div>
+                )}
+              </div>
               {(user?.role === 'admin' || user?.role === 'canteen_staff') && (
                 <div className="flex items-center justify-between">
                   <label className="text-sm font-medium text-gray-700">Available</label>
@@ -236,6 +303,8 @@ const Canteen = () => {
                   onClick={() => {
                     setShowMenuModal(false)
                     setEditingItem(null)
+                    setImageFile(null)
+                    setImagePreview(null)
                   }}
                   className="flex-1 bg-gray-200 text-gray-800 py-2 rounded-lg hover:bg-gray-300"
                 >

@@ -80,6 +80,44 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: true,
   },
+  registrationStatus: {
+    type: String,
+    enum: ['pending', 'approved', 'rejected'],
+    default: 'approved', // Default to approved, but controller will override for staff roles
+  },
+  emailVerified: {
+    type: Boolean,
+    default: false,
+  },
+  emailVerifiedAt: {
+    type: Date,
+  },
+  lastLogin: {
+    type: Date,
+  },
+  failedLoginAttempts: {
+    type: Number,
+    default: 0,
+  },
+  lockedUntil: {
+    type: Date,
+  },
+  lecturerCourses: [{
+    year: {
+      type: String,
+      enum: ['Year 1', 'Year 2', 'Year 3', 'Year 4', 'Year 5'],
+    },
+    courses: [{
+      courseCode: {
+        type: String,
+        required: true,
+      },
+      courseName: {
+        type: String,
+        required: true,
+      },
+    }],
+  }],
   createdAt: {
     type: Date,
     default: Date.now,
